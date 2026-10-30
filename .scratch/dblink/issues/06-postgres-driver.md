@@ -11,3 +11,6 @@
 - [x] 建立共享的 driver conformance 测试骨架，PG 全部通过
 - [x] docker-compose 起 PG，`open→query→close` 冒烟通过
 - [x] 只读连接与错误码契约在 PG 上同样成立
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by docker smoke: open->query->introspect->close against postgres:16.

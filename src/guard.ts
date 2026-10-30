@@ -6,7 +6,7 @@ import { DblinkError } from "./errors.js";
  * database account itself (see ADR-0003).
  */
 
-const READ_START = /^\s*(select|with|show|explain|describe|desc|pragma|values|table)\b/i;
+const READ_START = /^\s*(select|with|show|explain)\b/i;
 
 const WRITE_KEYWORDS =
   /\b(insert|update|delete|merge|upsert|replace|drop|alter|create|truncate|grant|revoke|call|copy|vacuum|attach|detach|reindex|cluster|comment|load_extension)\b/i;
@@ -29,7 +29,7 @@ export function isSingleStatement(sql: string): boolean {
 
 export function assertSingleStatement(sql: string): void {
   if (!sql || !sql.trim()) {
-    throw new DblinkError("INVALID_ARGUMENT", "SQL statement is empty");
+    throw new DblinkError("SQL_ERROR", "SQL statement is empty");
   }
   if (!isSingleStatement(sql)) {
     throw new DblinkError("READ_ONLY_VIOLATION", "Multiple SQL statements are not allowed", "Send one statement per call.");

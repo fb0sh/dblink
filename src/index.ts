@@ -2,6 +2,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { startHttpServer } from "./http.js";
+import { redactSecrets } from "./redact.js";
 import { createServer } from "./server.js";
 
 async function main(): Promise<void> {
@@ -30,7 +31,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { server, registry } = createServer();
+  const { server, registry } = createServer({
+    poolSize: config.poolSize,
+    idleMs: config.idleMs,
+    maxPools: config.maxPools,
+  });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
@@ -42,6 +47,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error("dblink: fatal error", e);
+  const message = e instanceof Error ? e.message : String(e);
+  console.error(`dblink: fatal error: ${redactSecrets(message)}`);
   process.exit(1);
 });

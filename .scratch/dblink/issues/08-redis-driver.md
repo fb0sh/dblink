@@ -11,3 +11,6 @@
 - [x] 非白名单命令（如 SET/DEL/FLUSHALL）返回 `UNSUPPORTED`
 - [x] `close_connection` 正常释放 Redis 连接
 - [x] docker-compose 起 Redis，`open→redis_command→close` 冒烟通过
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by docker smoke: PING allowed, SET -> UNSUPPORTED, close, against redis:7.

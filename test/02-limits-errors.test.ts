@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { toErrorPayload } from "../src/errors";
-import { MAX_LIMIT, shapeRows } from "../src/result";
+import { shapeRows } from "../src/result";
 import { makeHarness, newDbFile, seedDb, sqliteDsn, type Harness } from "./helpers";
 
 describe("02 — result limits, truncation and error contract", () => {
@@ -33,7 +33,8 @@ describe("02 — result limits, truncation and error contract", () => {
     expect(res.json.row_limit).toBe(2);
 
     const capped = await h.call("db_query", { connection_id: open.json.connection_id, sql: "select a from t", limit: 5000 });
-    expect(capped.json.row_limit).toBe(MAX_LIMIT);
+    expect(capped.isError).toBe(true);
+    expect(capped.json.error.code).toBe("LIMIT_EXCEEDED");
   });
 
   it("truncates by byte budget", async () => {

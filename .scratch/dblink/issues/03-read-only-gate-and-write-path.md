@@ -10,3 +10,6 @@
 - [x] `open_connection(read_only:false)` 后可 `db_execute` 写入并返回 `affected_rows`
 - [x] `db_query` 仅接受只读语句（SELECT/SHOW/EXPLAIN/只读 WITH），写入语句被拒
 - [x] best-effort 护栏：拒绝多语句与 DDL/DML（文档注明可被绕过，非安全边界）
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by unit tests test/03-readonly-write.test.ts + test/guard.test.ts.

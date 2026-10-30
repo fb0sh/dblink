@@ -12,3 +12,6 @@
 - [x] 不存在的 `connection_id` 返回 `{ok:false, error:{code:"CONN_NOT_FOUND"}}` 且 MCP `isError=true`
 - [x] `close_connection` 后再次查询返回 `CONN_CLOSED`
 - [x] 工具入参经 schema 校验，非法入参返回结构化错误
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by unit tests test/01-sqlite-vertical.test.ts (open/query/close, CONN_NOT_FOUND/CONN_CLOSED).

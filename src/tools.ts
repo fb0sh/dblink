@@ -3,6 +3,7 @@ import { z } from "zod";
 import { DblinkError, toErrorPayload } from "./errors.js";
 import { assertReadOnlySql, assertSingleStatement } from "./guard.js";
 import type { ConnectionRegistry } from "./registry.js";
+import { MAX_BYTES, MAX_LIMIT, shapeList } from "./result.js";
 
 const READONLY_REDIS_COMMANDS = new Set([
   "GET",
@@ -127,6 +128,13 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
         if (registry.kindOf(connection_id) === "redis") {
           throw new DblinkError("UNSUPPORTED", "Redis connections do not support SQL", "Use redis_command instead.");
         }
+        if (limit !== undefined && limit > MAX_LIMIT) {
+          throw new DblinkError(
+            "LIMIT_EXCEEDED",
+            `Requested limit ${limit} exceeds the maximum of ${MAX_LIMIT}`,
+            `Use limit <= ${MAX_LIMIT}.`,
+          );
+        }
         assertReadOnlySql(sql);
         const res = await registry.query(connection_id, sql, params, { requestedLimit: limit });
         return {
@@ -167,7 +175,13 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
     async ({ connection_id, schema }) =>
       run(async () => {
         const tables = await registry.listTables(connection_id, schema);
-        return { tables, count: tables.length };
+        const shaped = shapeList(tables);
+        return {
+          tables: shaped.items,
+          count: shaped.items.length,
+          truncated: shaped.truncated,
+          ...(shaped.reason ? { truncation_reason: shaped.reason } : {}),
+        };
       }),
   );
 
@@ -184,7 +198,14 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
     async ({ connection_id, table, schema }) =>
       run(async () => {
         const desc = await registry.describeTable(connection_id, table, schema);
-        return { table, columns: desc.columns, indexes: desc.indexes };
+        const columns = shapeList(desc.columns);
+        const indexes = shapeList(desc.indexes);
+        return {
+          table,
+          columns: columns.items,
+          indexes: indexes.items,
+          truncated: columns.truncated || indexes.truncated,
+        };
       }),
   );
 
@@ -212,6 +233,22 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
           );
         }
         const result = await registry.command(connection_id, normalized, args ?? []);
+        if (Array.isArray(result)) {
+          const shaped = shapeList(result);
+          return {
+            command: normalized,
+            result: shaped.items,
+            truncated: shaped.truncated,
+            ...(shaped.reason ? { truncation_reason: shaped.reason } : {}),
+          };
+        }
+        if (Buffer.byteLength(JSON.stringify(result ?? null), "utf8") > MAX_BYTES) {
+          throw new DblinkError(
+            "LIMIT_EXCEEDED",
+            `Redis result exceeds ${MAX_BYTES} bytes`,
+            "Narrow the command (e.g. SCAN or LRANGE with bounds).",
+          );
+        }
         return { command: normalized, result };
       }),
   );

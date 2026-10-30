@@ -50,6 +50,7 @@ Supported DSN schemes: `postgres://`, `postgresql://`, `mysql://`, `redis://`, `
 | `DBLINK_PORT` | `7331` | HTTP port (or pass `--http <port>`) |
 | `DBLINK_POOL_SIZE` | `5` | Max clients per pool |
 | `DBLINK_IDLE_MS` | `900000` | Idle pool eviction (15 min) |
+| `DBLINK_MAX_POOLS` | `20` | Max distinct connection pools per process |
 
 Limits: 100 rows by default (max 1000), 256 KB per result, 30 s statement timeout. Truncated results return `truncated: true`.
 

@@ -1,3 +1,5 @@
+import { redactSecrets } from "./redact.js";
+
 export type ErrorCode =
   | "CONN_NOT_FOUND"
   | "CONN_CLOSED"
@@ -5,8 +7,7 @@ export type ErrorCode =
   | "SQL_ERROR"
   | "TIMEOUT"
   | "LIMIT_EXCEEDED"
-  | "UNSUPPORTED"
-  | "INVALID_ARGUMENT";
+  | "UNSUPPORTED";
 
 export class DblinkError extends Error {
   readonly code: ErrorCode;
@@ -45,8 +46,12 @@ function mapUnknownCode(message: string): ErrorCode {
 
 export function toErrorPayload(e: unknown): ErrorPayload {
   if (isDblinkError(e)) {
-    return { code: e.code, message: e.message, hint: e.hint };
+    return {
+      code: e.code,
+      message: redactSecrets(e.message),
+      ...(e.hint ? { hint: redactSecrets(e.hint) } : {}),
+    };
   }
   const message = e instanceof Error ? e.message : String(e);
-  return { code: mapUnknownCode(message), message };
+  return { code: mapUnknownCode(message), message: redactSecrets(message) };
 }

@@ -12,3 +12,6 @@
 - [x] 池大小默认 5、空闲 15 分钟回收、单进程最多 20 池（可配置且被遵守）
 - [x] 连接被判定为 dead 时，下一次查询惰性重建并重试一次
 - [x] `connection_id` 为不透明串，不含库名/密码，任何返回体不回显 DSN
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by unit tests test/05-registry.test.ts (idempotency, opaque id, alive, lazy reconnect, maxPools).

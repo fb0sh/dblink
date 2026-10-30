@@ -11,3 +11,6 @@
 - [x] 错误或缺失 token 返回 401；正确 token 可正常调用工具
 - [x] 默认 bind `127.0.0.1`；仅 `DBLINK_BIND=0.0.0.0` 时对外且启动告警
 - [x] stdio 模式仍无需鉴权可正常使用
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by unit test test/09-http-auth.test.ts incl. end-to-end Streamable HTTP client; built-server smoke.

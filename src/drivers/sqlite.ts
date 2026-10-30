@@ -11,7 +11,7 @@ import type {
 
 export function sqlitePathFromDsn(dsn: string): string {
   if (!dsn.startsWith("sqlite:")) {
-    throw new DblinkError("INVALID_ARGUMENT", `Not a sqlite DSN: ${dsn}`);
+    throw new DblinkError("UNSUPPORTED", `Not a sqlite DSN: ${dsn}`);
   }
   let rest = dsn.slice("sqlite:".length);
   if (rest.startsWith("//")) rest = rest.slice(2);

@@ -10,3 +10,6 @@
 - [x] `db_describe_table(connection_id, table, schema?)` 返回列名、类型、可空、默认值与索引
 - [x] 表不存在时返回 `SQL_ERROR` 且带可读 `hint`
 - [x] 两个工具同样受结果上限与错误契约约束
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by unit tests test/04-introspection.test.ts.

@@ -10,3 +10,6 @@
 - [x] 通过对外工具完成 query / execute / introspect / close 全链路
 - [x] 跑通共享 conformance 骨架
 - [x] docker-compose 起 MySQL，`open→query→close` 冒烟通过
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by docker smoke: open->query->introspect->close against mysql:8.4.

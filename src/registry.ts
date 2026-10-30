@@ -192,8 +192,9 @@ export class ConnectionRegistry {
   ): Promise<QueryShaped> {
     const entry = this.require(id);
     const limit = effectiveRowLimit(opts.requestedLimit);
-    const raw = await this.withReconnect(entry, (d) =>
-      d.query(sql, params, { maxRows: limit + 1, timeoutMs: opts.timeoutMs ?? 30000 }),
+    const raw = await this.withTimeout(
+      this.withReconnect(entry, (d) => d.query(sql, params, { maxRows: limit + 1, timeoutMs: opts.timeoutMs ?? 30000 })),
+      opts.timeoutMs ?? 30000,
     );
     const shaped = shapeRows(raw.rows, { requestedLimit: opts.requestedLimit });
     return {
@@ -233,7 +234,7 @@ export class ConnectionRegistry {
     if (!entry.driver.command) {
       throw new DblinkError("UNSUPPORTED", "This connection does not support raw commands");
     }
-    return this.withReconnect(entry, (d) => d.command!(command, args));
+    return this.withTimeout(this.withReconnect(entry, (d) => d.command!(command, args)), 30000);
   }
 
   async list(): Promise<PublicConnection[]> {
@@ -284,6 +285,21 @@ export class ConnectionRegistry {
         this.closedIds.add(entry.id);
         await entry.driver.close().catch(() => undefined);
       }
+    }
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new DblinkError("TIMEOUT", `Statement timed out after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 

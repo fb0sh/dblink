@@ -14,19 +14,23 @@ export interface ShapedRows<T> {
   rowLimit: number;
 }
 
+export interface ShapedList<T> {
+  items: T[];
+  truncated: boolean;
+  reason?: "rows" | "bytes";
+}
+
 export function effectiveRowLimit(requested?: number): number {
   const base = requested && Number.isFinite(requested) && requested > 0 ? Math.floor(requested) : DEFAULT_LIMIT;
   return Math.min(base, MAX_LIMIT);
 }
 
-/**
- * Trim a row set to the effective row limit and byte budget. Pure function so
- * the limits are testable without a database.
- */
-export function shapeRows<T extends Record<string, unknown>>(rows: T[], opts: ShapeOptions = {}): ShapedRows<T> {
-  const rowLimit = effectiveRowLimit(opts.requestedLimit);
-  const maxBytes = opts.maxBytes ?? MAX_BYTES;
-  let out = rows;
+function byteLength(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function trimToLimits<T>(items: T[], rowLimit: number, maxBytes: number): ShapedList<T> {
+  let out = items;
   let truncated = false;
   let reason: "rows" | "bytes" | undefined;
 
@@ -36,22 +40,27 @@ export function shapeRows<T extends Record<string, unknown>>(rows: T[], opts: Sh
     reason = "rows";
   }
 
-  let bytes = byteLength(out);
-  while (bytes > maxBytes) {
+  while (byteLength(out) > maxBytes) {
     truncated = true;
     reason = "bytes";
     if (out.length <= 1) {
       out = [];
-      bytes = byteLength(out);
       break;
     }
     out = out.slice(0, Math.max(1, Math.floor(out.length * 0.8)));
-    bytes = byteLength(out);
   }
 
-  return { rows: out, truncated, reason, rowLimit };
+  return { items: out, truncated, ...(reason ? { reason } : {}) };
 }
 
-function byteLength(rows: unknown): number {
-  return Buffer.byteLength(JSON.stringify(rows), "utf8");
+/** Trim a row set to the effective row limit and byte budget. Pure function. */
+export function shapeRows<T extends Record<string, unknown>>(rows: T[], opts: ShapeOptions = {}): ShapedRows<T> {
+  const rowLimit = effectiveRowLimit(opts.requestedLimit);
+  const shaped = trimToLimits(rows, rowLimit, opts.maxBytes ?? MAX_BYTES);
+  return { rows: shaped.items, truncated: shaped.truncated, ...(shaped.reason ? { reason: shaped.reason } : {}), rowLimit };
+}
+
+/** Trim a list (table names, columns, redis results) to the same budgets. */
+export function shapeList<T>(items: T[], opts: ShapeOptions = {}): ShapedList<T> {
+  return trimToLimits(items, effectiveRowLimit(opts.requestedLimit), opts.maxBytes ?? MAX_BYTES);
 }

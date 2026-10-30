@@ -11,3 +11,6 @@
 - [x] docker-compose 提供 pg/mysql/redis，smoke 测试可跑
 - [x] CI 跑通单元测试与（可选）集成冒烟
 - [x] S1/S2/S3 三层测试全部通过，文档含只读账号的安全声明
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by npm run build + npm test (33 passed); docker integration (3 passed); README security notes.

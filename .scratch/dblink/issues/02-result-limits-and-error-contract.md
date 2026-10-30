@@ -12,3 +12,6 @@
 - [x] 语句超过 30s 返回 `code:"TIMEOUT"`
 - [x] 所有失败为 `{ok:false, error:{code,message,hint?}}`，`code` ∈ `CONN_NOT_FOUND/CONN_CLOSED/READ_ONLY_VIOLATION/SQL_ERROR/TIMEOUT/LIMIT_EXCEEDED/UNSUPPORTED`，且 MCP `isError=true`
 - [x] SQL 语法/执行错误映射为 `SQL_ERROR`；参数超限映射为 `LIMIT_EXCEEDED`
+
+## Comments
+- 2026-10-30: resolved on `feature/dblink`. Verified by unit tests test/02-limits-errors.test.ts (100/1000 row, 256KB byte, LIMIT_EXCEEDED, error codes).
