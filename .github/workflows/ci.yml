@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main, feature/**]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: unit
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dblink
+          POSTGRES_PASSWORD: dblink
+          POSTGRES_DB: dblink
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dblink -d dblink"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: dblink
+          MYSQL_DATABASE: dblink
+          MYSQL_USER: dblink
+          MYSQL_PASSWORD: dblink
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pdblink"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:integration
+        env:
+          DBLINK_TEST_PG_DSN: postgres://dblink:dblink@127.0.0.1:5432/dblink
+          DBLINK_TEST_MYSQL_DSN: mysql://dblink:dblink@127.0.0.1:3306/dblink
+          DBLINK_TEST_REDIS_DSN: redis://127.0.0.1:6379

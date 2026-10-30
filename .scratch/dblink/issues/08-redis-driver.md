@@ -4,10 +4,10 @@
 
 **Blocked by:** 05 (连接注册表池化)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `redis://` DSN 可连接，`kind:"redis"`
-- [ ] `redis_command` 支持只读白名单命令（GET/SCAN/HGETALL/LRANGE 等）
-- [ ] 非白名单命令（如 SET/DEL/FLUSHALL）返回 `UNSUPPORTED`
-- [ ] `close_connection` 正常释放 Redis 连接
-- [ ] docker-compose 起 Redis，`open→redis_command→close` 冒烟通过
+- [x] `redis://` DSN 可连接，`kind:"redis"`
+- [x] `redis_command` 支持只读白名单命令（GET/SCAN/HGETALL/LRANGE 等）
+- [x] 非白名单命令（如 SET/DEL/FLUSHALL）返回 `UNSUPPORTED`
+- [x] `close_connection` 正常释放 Redis 连接
+- [x] docker-compose 起 Redis，`open→redis_command→close` 冒烟通过

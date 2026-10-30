@@ -1,2 +1,9 @@
 # keeprules: 临时目录
 /tmp/
+
+# dblink
+node_modules/
+dist/
+coverage/
+*.tgz
+tmp/

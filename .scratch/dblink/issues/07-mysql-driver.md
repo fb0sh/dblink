@@ -4,9 +4,9 @@
 
 **Blocked by:** 06 (PostgreSQL Driver + conformance 骨架)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `mysql://` DSN 可连接，`kind:"mysql"`，返回 `server_version`
-- [ ] 通过对外工具完成 query / execute / introspect / close 全链路
-- [ ] 跑通共享 conformance 骨架
-- [ ] docker-compose 起 MySQL，`open→query→close` 冒烟通过
+- [x] `mysql://` DSN 可连接，`kind:"mysql"`，返回 `server_version`
+- [x] 通过对外工具完成 query / execute / introspect / close 全链路
+- [x] 跑通共享 conformance 骨架
+- [x] docker-compose 起 MySQL，`open→query→close` 冒烟通过

@@ -4,9 +4,9 @@
 
 **Blocked by:** 01 (SQLite 端到端只读查询)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `db_list_tables(connection_id, schema?)` 返回表名列表
-- [ ] `db_describe_table(connection_id, table, schema?)` 返回列名、类型、可空、默认值与索引
-- [ ] 表不存在时返回 `SQL_ERROR` 且带可读 `hint`
-- [ ] 两个工具同样受结果上限与错误契约约束
+- [x] `db_list_tables(connection_id, schema?)` 返回表名列表
+- [x] `db_describe_table(connection_id, table, schema?)` 返回列名、类型、可空、默认值与索引
+- [x] 表不存在时返回 `SQL_ERROR` 且带可读 `hint`
+- [x] 两个工具同样受结果上限与错误契约约束

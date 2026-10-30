@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 (SQLite 端到端只读查询)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 同一 DSN（经规范化指纹）重复 `open_connection` 返回同一个 `connection_id`
-- [ ] 不同 DSN 返回不同 `connection_id`
-- [ ] `list_connections` 报告每个连接的 `alive`/`dead` 状态
-- [ ] 池大小默认 5、空闲 15 分钟回收、单进程最多 20 池（可配置且被遵守）
-- [ ] 连接被判定为 dead 时，下一次查询惰性重建并重试一次
-- [ ] `connection_id` 为不透明串，不含库名/密码，任何返回体不回显 DSN
+- [x] 同一 DSN（经规范化指纹）重复 `open_connection` 返回同一个 `connection_id`
+- [x] 不同 DSN 返回不同 `connection_id`
+- [x] `list_connections` 报告每个连接的 `alive`/`dead` 状态
+- [x] 池大小默认 5、空闲 15 分钟回收、单进程最多 20 池（可配置且被遵守）
+- [x] 连接被判定为 dead 时，下一次查询惰性重建并重试一次
+- [x] `connection_id` 为不透明串，不含库名/密码，任何返回体不回显 DSN

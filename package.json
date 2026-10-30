@@ -1,14 +1,42 @@
 {
   "name": "@fb0sh/dblink",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "MCP server for multi-database access: PostgreSQL, MySQL, Redis, SQLite",
   "type": "module",
   "license": "MIT",
+  "bin": {
+    "dblink": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=22"
   },
-  "files": [],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run test/drivers.conformance.test.ts"
+  },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "mysql2": "^3.24.6",
+    "pg": "^8.23.1",
+    "redis": "^4.7.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
   }
 }

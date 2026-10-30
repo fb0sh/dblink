@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 (SQLite 端到端只读查询)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `db_query` 默认返回 100 行；`limit` 可调，硬上限 1000
-- [ ] 超过行数上限时返回 `truncated:true` 与实际 `rows_returned`，不提供游标
-- [ ] 超过 256KB 字节上限时同样截断并标记
-- [ ] 语句超过 30s 返回 `code:"TIMEOUT"`
-- [ ] 所有失败为 `{ok:false, error:{code,message,hint?}}`，`code` ∈ `CONN_NOT_FOUND/CONN_CLOSED/READ_ONLY_VIOLATION/SQL_ERROR/TIMEOUT/LIMIT_EXCEEDED/UNSUPPORTED`，且 MCP `isError=true`
-- [ ] SQL 语法/执行错误映射为 `SQL_ERROR`；参数超限映射为 `LIMIT_EXCEEDED`
+- [x] `db_query` 默认返回 100 行；`limit` 可调，硬上限 1000
+- [x] 超过行数上限时返回 `truncated:true` 与实际 `rows_returned`，不提供游标
+- [x] 超过 256KB 字节上限时同样截断并标记
+- [x] 语句超过 30s 返回 `code:"TIMEOUT"`
+- [x] 所有失败为 `{ok:false, error:{code,message,hint?}}`，`code` ∈ `CONN_NOT_FOUND/CONN_CLOSED/READ_ONLY_VIOLATION/SQL_ERROR/TIMEOUT/LIMIT_EXCEEDED/UNSUPPORTED`，且 MCP `isError=true`
+- [x] SQL 语法/执行错误映射为 `SQL_ERROR`；参数超限映射为 `LIMIT_EXCEEDED`

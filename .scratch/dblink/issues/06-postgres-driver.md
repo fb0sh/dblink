@@ -4,10 +4,10 @@
 
 **Blocked by:** 03 (只读/写路径)、04 (内省)、05 (注册表池化)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `postgres://` DSN 可连接，`kind:"postgres"`，返回 `server_version`
-- [ ] 通过对外工具可完成 query / execute / introspect / close 全链路
-- [ ] 建立共享的 driver conformance 测试骨架，PG 全部通过
-- [ ] docker-compose 起 PG，`open→query→close` 冒烟通过
-- [ ] 只读连接与错误码契约在 PG 上同样成立
+- [x] `postgres://` DSN 可连接，`kind:"postgres"`，返回 `server_version`
+- [x] 通过对外工具可完成 query / execute / introspect / close 全链路
+- [x] 建立共享的 driver conformance 测试骨架，PG 全部通过
+- [x] docker-compose 起 PG，`open→query→close` 冒烟通过
+- [x] 只读连接与错误码契约在 PG 上同样成立
