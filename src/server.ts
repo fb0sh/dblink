@@ -4,8 +4,8 @@ import { createCapabilityOps, type CapabilityOps } from "./ops/index.js";
 import { ConnectionRegistry, type RegistryOptions } from "./registry.js";
 import { registerTools } from "./tools.js";
 
-export const PACKAGE_NAME = "dblink";
-export const VERSION = "1.0.0";
+import { PACKAGE_NAME, VERSION } from "./version.js";
+export { PACKAGE_NAME, VERSION } from "./version.js";
 
 export interface CreateServerOptions extends RegistryOptions {
   name?: string;

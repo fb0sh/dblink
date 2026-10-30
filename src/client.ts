@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { decodeToolResult } from "./tool-envelope.js";
+import { VERSION } from "./version.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 export interface RemoteOptions {
@@ -29,7 +30,7 @@ function createTransport(opts: RemoteOptions): StreamableHTTPClientTransport {
 }
 
 export async function createDblinkClient(opts: RemoteOptions): Promise<DblinkClient> {
-  const client = new Client({ name: "dblink-client", version: "1.0.0" });
+  const client = new Client({ name: "dblink-client", version: VERSION });
   await client.connect(createTransport(opts));
   let closed = false;
 
