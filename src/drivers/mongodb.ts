@@ -1,6 +1,7 @@
 import { EJSON } from "bson";
 import { MongoClient, type Db, type Document, type FindOptions } from "mongodb";
 import { DblinkError } from "../errors.js";
+import { defaultDatabaseFromDsn, fromEjson, fromEjsonArray, planWrite, toRelaxedEjson } from "./mongo-codec.js";
 import type {
   Driver,
   EngineKind,
@@ -9,33 +10,6 @@ import type {
   MongoFindOptions,
   MongoWriteOperation,
 } from "./types.js";
-
-function defaultDatabaseFromDsn(dsn: string): string {
-  // new URL() rejects multi-host DSNs like mongodb://h1,h2/db, so fall back to
-  // a scheme-aware regex that still extracts the database path.
-  try {
-    const parsed = new URL(dsn);
-    return decodeURIComponent((parsed.pathname || "").replace(/^\//, "")) || "test";
-  } catch {
-    const match = /^mongodb(?:\+srv)?:\/\/[^/]*\/([^?]*)/i.exec(dsn);
-    if (!match) {
-      throw new DblinkError("SQL_ERROR", "Invalid MongoDB DSN", "Expected mongodb:// or mongodb+srv:// URL.");
-    }
-    return decodeURIComponent(match[1] || "") || "test";
-  }
-}
-
-function toRelaxedEjson(value: unknown): Record<string, unknown> {
-  return EJSON.serialize(value, { relaxed: true }) as Record<string, unknown>;
-}
-
-function deserializeEjson(value: unknown): Document {
-  return EJSON.deserialize(value as never) as Document;
-}
-
-function deserializeEjsonArray(value: unknown): Document[] {
-  return EJSON.deserialize(value as never) as Document[];
-}
 
 export class MongoDriver implements Driver {
   readonly kind: EngineKind = "mongodb";
@@ -66,14 +40,13 @@ export class MongoDriver implements Driver {
   }
 
   async find(collection: string, opts: MongoFindOptions): Promise<Record<string, unknown>[]> {
-    const filter: Document = opts.filter !== undefined ? deserializeEjson(opts.filter) : {};
+    const filter: Document = opts.filter !== undefined ? fromEjson(opts.filter) : {};
     const options: FindOptions = {};
-    if (opts.projection !== undefined) options.projection = deserializeEjson(opts.projection);
-    if (opts.sort !== undefined) options.sort = deserializeEjson(opts.sort) as FindOptions["sort"];
+    if (opts.projection !== undefined) options.projection = fromEjson(opts.projection);
+    if (opts.sort !== undefined) options.sort = fromEjson(opts.sort) as FindOptions["sort"];
     let cursor = this.db(opts.database).collection(collection).find(filter, options);
     if (opts.limit) cursor = cursor.limit(opts.limit);
-    const docs = await cursor.toArray();
-    return docs.map(toRelaxedEjson);
+    return (await cursor.toArray()).map(toRelaxedEjson);
   }
 
   async aggregate(
@@ -81,43 +54,33 @@ export class MongoDriver implements Driver {
     pipeline: unknown[],
     opts: MongoAggregateOptions,
   ): Promise<Record<string, unknown>[]> {
-    const stages = deserializeEjsonArray(pipeline);
+    const stages = fromEjsonArray(pipeline);
     let cursor = this.db(opts.database).collection(collection).aggregate(stages);
     if (opts.limit) cursor = cursor.limit(opts.limit);
-    const docs = await cursor.toArray();
-    return docs.map(toRelaxedEjson);
+    return (await cursor.toArray()).map(toRelaxedEjson);
   }
 
   async mongoWrite(op: MongoWriteOperation): Promise<Record<string, unknown>> {
+    const plan = planWrite(op);
     const collection = this.db(op.database).collection(op.collection);
-    const payload = op.payload ?? {};
-    if (op.action === "insert") {
-      const documents = (payload.documents as unknown[]) ?? [];
-      if (!Array.isArray(documents) || documents.length === 0) {
-        throw new DblinkError("SQL_ERROR", "insert requires a non-empty documents array");
-      }
-      const res = await collection.insertMany(documents.map((d) => deserializeEjson(d)));
+
+    if (plan.kind === "insert") {
+      const res = await collection.insertMany(plan.documents);
       return { inserted_count: res.insertedCount, inserted_ids: EJSON.serialize(res.insertedIds, { relaxed: true }) };
     }
-    if (op.action === "update") {
-      const filter = deserializeEjson(payload.filter ?? {});
-      const update = deserializeEjson(payload.update ?? {});
-      const options = { upsert: Boolean(payload.upsert) };
-      const res = payload.multi
-        ? await collection.updateMany(filter, update, options)
-        : await collection.updateOne(filter, update, options);
+    if (plan.kind === "update") {
+      const options = { upsert: plan.upsert };
+      const res = plan.multi
+        ? await collection.updateMany(plan.filter, plan.update, options)
+        : await collection.updateOne(plan.filter, plan.update, options);
       return {
         matched_count: res.matchedCount,
         modified_count: res.modifiedCount,
         upserted_id: res.upsertedId ? EJSON.serialize(res.upsertedId, { relaxed: true }) : null,
       };
     }
-    if (op.action === "delete") {
-      const filter = deserializeEjson(payload.filter ?? {});
-      const res = payload.multi ? await collection.deleteMany(filter) : await collection.deleteOne(filter);
-      return { deleted_count: res.deletedCount };
-    }
-    throw new DblinkError("SQL_ERROR", `Unknown write action: ${String(op.action)}`);
+    const res = plan.multi ? await collection.deleteMany(plan.filter) : await collection.deleteOne(plan.filter);
+    return { deleted_count: res.deletedCount };
   }
 
   async listCollections(database?: string): Promise<string[]> {

@@ -1,2 +1,2 @@
-export { serveHttp as startHttpServer } from "./server.js";
-export type { HttpServerHandle } from "./server.js";
+export { serveHttp as startHttpServer, isAuthorized, readBody, SessionStore } from "./server-http.js";
+export type { HttpServerHandle } from "./server-http.js";

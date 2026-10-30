@@ -3,7 +3,8 @@ import { parseFlags, stringFlag } from "./cli/args.js";
 import { runClient } from "./cli/client.js";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { redactSecrets } from "./redact.js";
-import { serveHttp, serveStdio } from "./server.js";
+import { serveStdio } from "./server.js";
+import { serveHttp } from "./server-http.js";
 
 const USAGE = `dblink — MCP server for multi-database access
 

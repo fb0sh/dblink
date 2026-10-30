@@ -6,11 +6,22 @@ import { DblinkError } from "./errors.js";
 
 const DEFAULT_STATEMENT_TIMEOUT_MS = 30000;
 
+export interface Scheduler {
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const defaultScheduler: Scheduler = {
+  set: (fn, ms) => setTimeout(fn, ms),
+  clear: (handle) => clearTimeout(handle as NodeJS.Timeout),
+};
+
 export interface RegistryOptions {
   poolSize?: number;
   idleMs?: number;
   maxPools?: number;
   statementTimeoutMs?: number;
+  scheduler?: Scheduler;
   driverFactory?: (kind: EngineKind, dsn: string, opts: { readOnly: boolean; poolSize: number }) => Driver;
   now?: () => number;
 }
@@ -68,16 +79,16 @@ async function safeVersion(driver: Driver): Promise<string | undefined> {
   }
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, scheduler: Scheduler): Promise<T> {
+  let handle: unknown;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
+    handle = scheduler.set(
       () => reject(new DblinkError("TIMEOUT", `Statement timed out after ${timeoutMs}ms`)),
       timeoutMs,
     );
   });
   return Promise.race([promise, timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
+    if (handle !== undefined) scheduler.clear(handle);
   });
 }
 
@@ -90,6 +101,7 @@ export class Connection {
     private readonly entry: Entry,
     private readonly clock: () => number,
     private readonly timeoutMs: number,
+    private readonly scheduler: Scheduler,
   ) {}
 
   get id(): string {
@@ -115,7 +127,7 @@ export class Connection {
   async run<T>(fn: (driver: Driver) => Promise<T>, timeoutMs: number = this.timeoutMs): Promise<T> {
     this.touch();
     try {
-      return await withTimeout(fn(this.entry.driver), timeoutMs);
+      return await withTimeout(fn(this.entry.driver), timeoutMs, this.scheduler);
     } catch (e) {
       if (!isConnectionError(e)) throw e;
       try {
@@ -125,7 +137,7 @@ export class Connection {
       }
       await this.entry.driver.connect();
       this.touch();
-      return await withTimeout(fn(this.entry.driver), timeoutMs);
+      return await withTimeout(fn(this.entry.driver), timeoutMs, this.scheduler);
     }
   }
 }
@@ -138,6 +150,7 @@ export class ConnectionRegistry {
   private readonly idleMs: number;
   private readonly maxPools: number;
   private readonly statementTimeoutMs: number;
+  private readonly scheduler: Scheduler;
   private readonly factory: NonNullable<RegistryOptions["driverFactory"]>;
   private readonly clock: () => number;
 
@@ -146,6 +159,7 @@ export class ConnectionRegistry {
     this.idleMs = opts.idleMs ?? 15 * 60 * 1000;
     this.maxPools = opts.maxPools ?? 20;
     this.statementTimeoutMs = opts.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS;
+    this.scheduler = opts.scheduler ?? defaultScheduler;
     this.factory = opts.driverFactory ?? ((kind, dsn, o) => createDriver(kind, dsn, o));
     this.clock = opts.now ?? Date.now;
   }
@@ -239,7 +253,7 @@ export class ConnectionRegistry {
   }
 
   resolve(id: string): Connection {
-    return new Connection(this.require(id), this.clock, this.statementTimeoutMs);
+    return new Connection(this.require(id), this.clock, this.statementTimeoutMs, this.scheduler);
   }
 
   kindOf(id: string): EngineKind {
