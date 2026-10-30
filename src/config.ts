@@ -30,7 +30,7 @@ export function loadServeConfig(argv: string[], env: NodeJS.ProcessEnv = process
 function buildConfig(argv: string[], env: NodeJS.ProcessEnv, command: Command): Config {
   const flags = parseFlags(argv);
   const allowed =
-    command === "serve" ? new Set(["host", "port", "token", "help", "h"]) : new Set(["http", "help", "h"]);
+    command === "serve" ? new Set(["host", "port", "token"]) : new Set(["http"]);
   for (const key of flags.keys()) {
     if (!allowed.has(key)) throw new ConfigError(`Unknown option: --${key}`);
   }

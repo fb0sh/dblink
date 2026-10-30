@@ -57,6 +57,7 @@ export async function makeHarness(opts: CreateServerOptions = {}): Promise<Harne
     call,
     close: async () => {
       await client.close();
+      await registry.closeAll();
       await server.close();
     },
   };

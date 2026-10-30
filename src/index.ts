@@ -56,16 +56,16 @@ async function main(): Promise<void> {
     await runClient(argv.slice(1));
     return;
   }
+  if (argv.includes("--help") || argv.includes("-h") || cmd === "help") {
+    console.log(USAGE);
+    return;
+  }
   if (cmd === "serve") {
     await startHttp(loadServeConfig(argv.slice(1)));
     return;
   }
   if (cmd === "stdio") {
     await serveStdio();
-    return;
-  }
-  if (cmd === "--help" || cmd === "-h" || cmd === "help") {
-    console.log(USAGE);
     return;
   }
   await legacy(argv);
