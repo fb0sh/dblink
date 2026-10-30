@@ -137,8 +137,14 @@ export async function startHttpServer(config: Config): Promise<HttpServerHandle>
     server: httpServer,
     port,
     close: async () => {
-      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+      // Close MCP sessions (and their SSE streams) first, then stop the listener
+      // and force-drop any lingering keep-alive connections so shutdown is prompt.
       await Promise.all([...sessions.values()].map((s) => s.transport.close().catch(() => undefined)));
+      sessions.clear();
+      await new Promise<void>((resolve) => {
+        httpServer.close(() => resolve());
+        httpServer.closeAllConnections?.();
+      });
       await registry.closeAll();
     },
   };

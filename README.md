@@ -38,8 +38,13 @@ MCP client config (stdio) example:
 | `db_list_tables(connection_id, schema?)` | List tables/views |
 | `db_describe_table(connection_id, table, schema?)` | Columns + indexes |
 | `redis_command(connection_id, command, args?)` | Read-only Redis commands (allow-list) |
+| `mongo_find(connection_id, collection, filter?, projection?, sort?, limit?, database?)` | Query documents (relaxed EJSON) |
+| `mongo_aggregate(connection_id, collection, pipeline, limit?, database?)` | Aggregation pipeline (no `$out/$merge` when read-only) |
+| `mongo_write(connection_id, collection, action, payload, database?)` | insert/update/delete (writable connections only) |
+| `mongo_list_collections(connection_id, database?)` | List collections |
+| `mongo_describe_collection(connection_id, collection, database?)` | Sample document, indexes, inferred fields |
 
-Supported DSN schemes: `postgres://`, `postgresql://`, `mysql://`, `redis://`, `rediss://`, `sqlite:` (file or `:memory:`).
+Supported DSN schemes: `postgres://`, `postgresql://`, `mysql://`, `redis://`, `rediss://`, `mongodb://`, `mongodb+srv://`, `sqlite:` (file or `:memory:`).
 
 ## Configuration (environment)
 
@@ -73,6 +78,7 @@ docker compose up -d   # postgres/mysql/redis for integration
 DBLINK_TEST_PG_DSN=postgres://dblink:dblink@127.0.0.1:55432/dblink \
 DBLINK_TEST_MYSQL_DSN=mysql://dblink:dblink@127.0.0.1:53306/dblink \
 DBLINK_TEST_REDIS_DSN=redis://127.0.0.1:56379 \
+DBLINK_TEST_MONGO_DSN=mongodb://127.0.0.1:57017/dblink \
 npm run test:integration
 ```
 

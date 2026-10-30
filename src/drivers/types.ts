@@ -1,4 +1,4 @@
-export type EngineKind = "postgres" | "mysql" | "redis" | "sqlite";
+export type EngineKind = "postgres" | "mysql" | "redis" | "sqlite" | "mongodb";
 
 export interface ColumnMeta {
   name: string;
@@ -33,6 +33,32 @@ export interface QueryOptions {
   timeoutMs?: number;
 }
 
+export interface MongoFindOptions {
+  database?: string;
+  filter?: unknown;
+  projection?: unknown;
+  sort?: unknown;
+  limit?: number;
+}
+
+export interface MongoAggregateOptions {
+  database?: string;
+  limit?: number;
+}
+
+export interface MongoWriteOperation {
+  database?: string;
+  collection: string;
+  action: "insert" | "update" | "delete";
+  payload: Record<string, unknown>;
+}
+
+export interface MongoCollectionDescription {
+  sample_document: unknown;
+  indexes: unknown[];
+  fields: string[];
+}
+
 export interface Driver {
   readonly kind: EngineKind;
   connect(): Promise<void>;
@@ -43,6 +69,18 @@ export interface Driver {
   describeTable(table: string, schema?: string): Promise<TableDescription>;
   ping(): Promise<boolean>;
   close(): Promise<void>;
+
   /** Redis-only: run a raw command. Other drivers throw UNSUPPORTED. */
   command?(command: string, args: string[]): Promise<unknown>;
+
+  /** MongoDB-only operations. Other drivers leave these undefined. */
+  find?(collection: string, opts: MongoFindOptions): Promise<Record<string, unknown>[]>;
+  aggregate?(
+    collection: string,
+    pipeline: unknown[],
+    opts: MongoAggregateOptions,
+  ): Promise<Record<string, unknown>[]>;
+  mongoWrite?(op: MongoWriteOperation): Promise<Record<string, unknown>>;
+  listCollections?(database?: string): Promise<string[]>;
+  describeCollection?(collection: string, database?: string): Promise<MongoCollectionDescription>;
 }

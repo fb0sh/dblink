@@ -73,7 +73,7 @@ describe("09 — HTTP transport auth (S3)", () => {
       await client.connect(transport);
 
       const tools = await client.listTools();
-      expect(tools.tools).toHaveLength(8);
+      expect(tools.tools).toHaveLength(13);
 
       const open: any = await client.callTool({ name: "open_connection", arguments: { dsn: "sqlite::memory:" } });
       const openJson = JSON.parse(open.content[0].text);

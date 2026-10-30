@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { DblinkError, toErrorPayload } from "./errors.js";
 import { assertReadOnlySql, assertSingleStatement } from "./guard.js";
+import { assertAggregatePipeline } from "./mongo-guard.js";
 import type { ConnectionRegistry } from "./registry.js";
 import { MAX_BYTES, MAX_LIMIT, shapeList } from "./result.js";
 
@@ -59,12 +60,31 @@ async function run(fn: () => Promise<Record<string, unknown>>): Promise<ToolResp
   }
 }
 
+function requireSqlEngine(registry: ConnectionRegistry, connectionId: string): void {
+  const kind = registry.kindOf(connectionId);
+  if (kind === "redis" || kind === "mongodb") {
+    throw new DblinkError(
+      "UNSUPPORTED",
+      `${kind} connections do not support SQL tools`,
+      kind === "mongodb" ? "Use the mongo_* tools." : "Use redis_command.",
+    );
+  }
+}
+
+function requireMongoEngine(registry: ConnectionRegistry, connectionId: string): void {
+  if (registry.kindOf(connectionId) !== "mongodb") {
+    throw new DblinkError("UNSUPPORTED", "This tool requires a mongodb connection");
+  }
+}
+
+const mongoObject = z.record(z.string(), z.any());
+
 export function registerTools(server: McpServer, registry: ConnectionRegistry): void {
   server.registerTool(
     "open_connection",
     {
       description:
-        "Open (or reuse) a database connection. Returns a connection_id used by the other tools. DSN schemes: postgres://, mysql://, redis://, sqlite:",
+        "Open (or reuse) a database connection. Returns a connection_id used by the other tools. DSN schemes: postgres://, mysql://, redis://, mongodb://, mongodb+srv://, sqlite:",
       inputSchema: {
         dsn: z.string().describe("Database URL / DSN"),
         read_only: z.boolean().optional().describe("Read-only connection (default true)"),
@@ -125,9 +145,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
     },
     async ({ connection_id, sql, params, limit }) =>
       run(async () => {
-        if (registry.kindOf(connection_id) === "redis") {
-          throw new DblinkError("UNSUPPORTED", "Redis connections do not support SQL", "Use redis_command instead.");
-        }
+        requireSqlEngine(registry, connection_id);
         if (limit !== undefined && limit > MAX_LIMIT) {
           throw new DblinkError(
             "LIMIT_EXCEEDED",
@@ -160,6 +178,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
     },
     async ({ connection_id, sql, params }) =>
       run(async () => {
+        requireSqlEngine(registry, connection_id);
         assertSingleStatement(sql);
         const res = await registry.execute(connection_id, sql, params);
         return { affected_rows: res.affected_rows };
@@ -174,6 +193,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
     },
     async ({ connection_id, schema }) =>
       run(async () => {
+        requireSqlEngine(registry, connection_id);
         const tables = await registry.listTables(connection_id, schema);
         const shaped = shapeList(tables);
         return {
@@ -197,6 +217,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
     },
     async ({ connection_id, table, schema }) =>
       run(async () => {
+        requireSqlEngine(registry, connection_id);
         const desc = await registry.describeTable(connection_id, table, schema);
         const columns = shapeList(desc.columns);
         const indexes = shapeList(desc.indexes);
@@ -252,4 +273,139 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
         return { command: normalized, result };
       }),
   );
+
+  server.registerTool(
+    "mongo_find",
+    {
+      description:
+        "Query documents from a MongoDB collection. filter/projection/sort accept relaxed EJSON. Returns relaxed EJSON documents.",
+      inputSchema: {
+        connection_id: z.string(),
+        collection: z.string(),
+        filter: mongoObject.optional(),
+        projection: mongoObject.optional(),
+        sort: mongoObject.optional(),
+        limit: z.number().int().positive().optional(),
+        database: z.string().optional(),
+      },
+    },
+    async ({ connection_id, collection, filter, projection, sort, limit, database }) =>
+      run(async () => {
+        requireMongoEngine(registry, connection_id);
+        if (limit !== undefined && limit > MAX_LIMIT) {
+          throw new DblinkError("LIMIT_EXCEEDED", `Requested limit ${limit} exceeds the maximum of ${MAX_LIMIT}`);
+        }
+        const res = await registry.mongoFind(connection_id, collection, {
+          filter,
+          projection,
+          sort,
+          limit,
+          database,
+        });
+        return {
+          documents: res.documents,
+          count: res.documents.length,
+          truncated: res.truncated,
+          ...(res.reason ? { truncation_reason: res.reason } : {}),
+          row_limit: res.row_limit,
+        };
+      }),
+  );
+
+  server.registerTool(
+    "mongo_aggregate",
+    {
+      description: "Run a MongoDB aggregation pipeline. Read-only connections reject $out/$merge.",
+      inputSchema: {
+        connection_id: z.string(),
+        collection: z.string(),
+        pipeline: z.array(mongoObject),
+        limit: z.number().int().positive().optional(),
+        database: z.string().optional(),
+      },
+    },
+    async ({ connection_id, collection, pipeline, limit, database }) =>
+      run(async () => {
+        requireMongoEngine(registry, connection_id);
+        const readOnly = registry.isReadOnly(connection_id);
+        assertAggregatePipeline(pipeline, readOnly);
+        const res = await registry.mongoAggregate(connection_id, collection, pipeline, { limit, database });
+        return {
+          documents: res.documents,
+          count: res.documents.length,
+          truncated: res.truncated,
+          ...(res.reason ? { truncation_reason: res.reason } : {}),
+        };
+      }),
+  );
+
+  server.registerTool(
+    "mongo_write",
+    {
+      description:
+        "Write to MongoDB (action: insert|update|delete). Only allowed on writable connections (read_only=false).",
+      inputSchema: {
+        connection_id: z.string(),
+        collection: z.string(),
+        action: z.enum(["insert", "update", "delete"]),
+        payload: mongoObject,
+        database: z.string().optional(),
+      },
+    },
+    async ({ connection_id, collection, action, payload, database }) =>
+      run(async () => {
+        requireMongoEngine(registry, connection_id);
+        const res = await registry.mongoWrite(connection_id, { collection, action, payload, database });
+        return { action, collection, ...res };
+      }),
+  );
+
+  server.registerTool(
+    "mongo_list_collections",
+    {
+      description: "List collections in a MongoDB database.",
+      inputSchema: { connection_id: z.string(), database: z.string().optional() },
+    },
+    async ({ connection_id, database }) =>
+      run(async () => {
+        requireMongoEngine(registry, connection_id);
+        const collections = await registry.mongoListCollections(connection_id, database);
+        const shaped = shapeList(collections);
+        return {
+          collections: shaped.items,
+          count: shaped.items.length,
+          truncated: shaped.truncated,
+        };
+      }),
+  );
+
+  server.registerTool(
+    "mongo_describe_collection",
+    {
+      description: "Describe a MongoDB collection: sample document (EJSON), indexes and inferred fields.",
+      inputSchema: {
+        connection_id: z.string(),
+        collection: z.string(),
+        database: z.string().optional(),
+      },
+    },
+    async ({ connection_id, collection, database }) =>
+      run(async () => {
+        requireMongoEngine(registry, connection_id);
+        const desc = await registry.mongoDescribeCollection(connection_id, collection, database);
+        const indexes = shapeList(desc.indexes);
+        const sampleBytes = Buffer.byteLength(JSON.stringify(desc.sample_document ?? null), "utf8");
+        if (sampleBytes > MAX_BYTES) {
+          throw new DblinkError("LIMIT_EXCEEDED", "Sample document exceeds the result byte limit");
+        }
+        return {
+          collection,
+          sample_document: desc.sample_document,
+          indexes: indexes.items,
+          fields: desc.fields,
+          truncated: indexes.truncated,
+        };
+      }),
+  );
 }
+

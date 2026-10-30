@@ -27,6 +27,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "bson": "^7.3.3",
+    "mongodb": "^7.7.0",
     "mysql2": "^3.24.6",
     "pg": "^8.23.1",
     "redis": "^4.7.0",

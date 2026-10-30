@@ -2,7 +2,15 @@ import { randomBytes } from "node:crypto";
 import { DblinkError } from "./errors.js";
 import { createDriver, detectKind } from "./drivers/index.js";
 import { sqlitePathFromDsn } from "./drivers/sqlite.js";
-import type { Driver, EngineKind, TableDescription } from "./drivers/types.js";
+import type {
+  Driver,
+  EngineKind,
+  MongoAggregateOptions,
+  MongoCollectionDescription,
+  MongoFindOptions,
+  MongoWriteOperation,
+  TableDescription,
+} from "./drivers/types.js";
 import { effectiveRowLimit, shapeRows } from "./result.js";
 
 export interface RegistryOptions {
@@ -42,6 +50,13 @@ export interface PublicConnection {
 export interface QueryShaped {
   columns: string[];
   rows: Record<string, unknown>[];
+  truncated: boolean;
+  reason?: "rows" | "bytes";
+  row_limit: number;
+}
+
+export interface MongoShaped {
+  documents: Record<string, unknown>[];
   truncated: boolean;
   reason?: "rows" | "bytes";
   row_limit: number;
@@ -184,6 +199,10 @@ export class ConnectionRegistry {
     return this.require(id).kind;
   }
 
+  isReadOnly(id: string): boolean {
+    return this.require(id).readOnly;
+  }
+
   async query(
     id: string,
     sql: string,
@@ -227,6 +246,84 @@ export class ConnectionRegistry {
   async describeTable(id: string, table: string, schema?: string): Promise<TableDescription> {
     const entry = this.require(id);
     return this.withReconnect(entry, (d) => d.describeTable(table, schema));
+  }
+
+  async mongoFind(id: string, collection: string, opts: MongoFindOptions = {}): Promise<MongoShaped> {
+    const entry = this.require(id);
+    if (entry.kind !== "mongodb" || !entry.driver.find) {
+      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_find");
+    }
+    const limit = effectiveRowLimit(opts.limit);
+    const docs = await this.withTimeout(
+      this.withReconnect(entry, (d) => d.find!(collection, { ...opts, limit: limit + 1 })),
+      30000,
+    );
+    const shaped = shapeRows(docs, { requestedLimit: opts.limit });
+    return {
+      documents: shaped.rows,
+      truncated: shaped.truncated,
+      ...(shaped.reason ? { reason: shaped.reason } : {}),
+      row_limit: shaped.rowLimit,
+    };
+  }
+
+  async mongoAggregate(
+    id: string,
+    collection: string,
+    pipeline: unknown[],
+    opts: MongoAggregateOptions = {},
+  ): Promise<MongoShaped> {
+    const entry = this.require(id);
+    if (entry.kind !== "mongodb" || !entry.driver.aggregate) {
+      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_aggregate");
+    }
+    const limit = effectiveRowLimit(opts.limit);
+    const docs = await this.withTimeout(
+      this.withReconnect(entry, (d) => d.aggregate!(collection, pipeline, { ...opts, limit: limit + 1 })),
+      30000,
+    );
+    const shaped = shapeRows(docs, { requestedLimit: opts.limit });
+    return {
+      documents: shaped.rows,
+      truncated: shaped.truncated,
+      ...(shaped.reason ? { reason: shaped.reason } : {}),
+      row_limit: shaped.rowLimit,
+    };
+  }
+
+  async mongoWrite(id: string, op: MongoWriteOperation): Promise<Record<string, unknown>> {
+    const entry = this.require(id);
+    if (entry.kind !== "mongodb" || !entry.driver.mongoWrite) {
+      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_write");
+    }
+    if (entry.readOnly) {
+      throw new DblinkError(
+        "READ_ONLY_VIOLATION",
+        "This connection is read-only; mongo_write is not allowed",
+        "Re-open the connection with read_only=false to allow writes.",
+      );
+    }
+    return this.withTimeout(this.withReconnect(entry, (d) => d.mongoWrite!(op)), 30000);
+  }
+
+  async mongoListCollections(id: string, database?: string): Promise<string[]> {
+    const entry = this.require(id);
+    if (!entry.driver.listCollections) {
+      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_list_collections");
+    }
+    return this.withTimeout(this.withReconnect(entry, (d) => d.listCollections!(database)), 30000);
+  }
+
+  async mongoDescribeCollection(
+    id: string,
+    collection: string,
+    database?: string,
+  ): Promise<MongoCollectionDescription> {
+    const entry = this.require(id);
+    if (!entry.driver.describeCollection) {
+      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_describe_collection");
+    }
+    return this.withTimeout(this.withReconnect(entry, (d) => d.describeCollection!(collection, database)), 30000);
   }
 
   async command(id: string, command: string, args: string[]): Promise<unknown> {
