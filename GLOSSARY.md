@@ -16,3 +16,8 @@
 | **truncation** | 结果超过行数/字节上限时的截断，返回 `truncated: true`，无游标。 |
 | **bearer token** | HTTP 传输的鉴权凭据，来自 `DBLINK_HTTP_TOKEN`。 |
 | **best-effort guard** | 代码层的 SQL 词法/单语句拦截，仅减少手滑，可被绕过。 |
+| **document** | MongoDB 的基本数据单元（BSON 文档）；对应 SQL 的"行"。 |
+| **collection** | MongoDB 中一组 document 的容器；对应 SQL 的"表"，但无固定 schema。 |
+| **aggregate pipeline** | MongoDB 的聚合阶段数组（`$match`/`$group`/…）；只读模式下禁止 `$out`/`$merge` 等写阶段。 |
+| **EJSON** | MongoDB Extended JSON；用于在 JSON 中保留 `ObjectId`/`Date`/`Decimal128` 等类型。返回结果采用 relaxed 形式。 |
+| **engine capability** | 某个引擎支持哪些工具的能力。SQL 工具（`db_query` 等）对 Redis/MongoDB **不适用**，调用返回 `UNSUPPORTED`——这是"工具不适用"，不等于"引擎不可用"。 |

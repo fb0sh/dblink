@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-Agent（LLM 驱动的编码/运维助手）需要读取与操作多种数据库（PostgreSQL、MySQL、Redis、SQLite，未来 MongoDB），但每个引擎的连接方式、查询语言、认证与结果形态都不同。逐个引擎手写连接代码既慢又不可复用；同时如果不加约束，agent 容易拉回海量数据撑爆上下文、或在只读场景误执行写操作。
+Agent（LLM 驱动的编码/运维助手）需要读取与操作多种数据库（PostgreSQL、MySQL、Redis、SQLite、MongoDB），但每个引擎的连接方式、查询语言、认证与结果形态都不同。逐个引擎手写连接代码既慢又不可复用；同时如果不加约束，agent 容易拉回海量数据撑爆上下文、或在只读场景误执行写操作。
 
 ## Solution
 
@@ -76,7 +76,7 @@ Agent（LLM 驱动的编码/运维助手）需要读取与操作多种数据库�
 
 - `read_only` 只在 `open_connection` 决定，默认 `true`，无环境变量开关；安全边界是数据库只读账号（见 ADR-0002、ADR-0003）。
 - `connection_id` 不含库名/密码，永不回显 DSN；服务端日志必须打码口令。
-- 引擎范围 v1 = PostgreSQL / MySQL / Redis / SQLite；MongoDB 为 v2，仅预留 `Driver` 扩展位（ADR-0008）。
+- 引擎范围：PostgreSQL / MySQL / Redis / SQLite + MongoDB（非 SQL，见 ADR-0010）。
 - 传输与鉴权细节见 ADR-0006；结果/错误契约见 ADR-0007；技术栈见 ADR-0009。
 
 ## Testing Decisions
@@ -93,7 +93,7 @@ Agent（LLM 驱动的编码/运维助手）需要读取与操作多种数据库�
 
 ## Out of Scope
 
-- MongoDB 及其他引擎实现（v2，仅留扩展位）。
+- 其他引擎（除上述五类之外）的实现。
 - profile / 凭据托管 / 密钥轮换。
 - stdio 鉴权、多租户隔离、按客户端隔离的连接注册表。
 - 游标分页、结果流式传输。

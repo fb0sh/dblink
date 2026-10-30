@@ -9,13 +9,12 @@
 
 ## Decision
 
-- **v1 引擎**：PostgreSQL、MySQL、Redis、SQLite（SQLite 作为第 4 个引擎，主要做测试载体，使用 Node 内置 `node:sqlite`）。
-- **v2**：MongoDB。
-- 第一天就定义 `Driver` 接口：`connect / query / execute / introspect / close`；MongoDB 将来实现同一接口。
-- 引擎类型（`kind`）由 DSN scheme 自动识别：`postgres://`、`mysql://`、`redis://`、`sqlite:`。
+- **v1 引擎**：PostgreSQL、MySQL、Redis、SQLite（SQLite 主要做测试载体，使用 Node 内置 `node:sqlite`）、MongoDB（非 SQL，见 ADR-0010）。
+- 定义 `Driver` 接口：`connect / query / execute / introspect / close`；MongoDB 使用同一接口的非 SQL 能力（`command`），详见 ADR-0010。
+- 引擎类型（`kind`）由 DSN scheme 自动识别：`postgres://`、`mysql://`、`redis://`、`sqlite:`、`mongodb://`、`mongodb+srv://`。
 
 ## Consequences
 
-- 先用 SQL 家族 + Redis 验证连接/权限模型，再扩 Mongo。
+- 已交付 SQL 家族 + Redis；MongoDB 作为第五个引擎按 ADR-0010 接入。
 - 非 SQL 引擎使用独立工具（见 ADR-0005），不硬塞进 `sql` 参数。
 - 新增引擎只需实现 `Driver` 接口并注册，不影响既有工具。
