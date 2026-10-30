@@ -16,6 +16,18 @@ npx @fb0sh/dblink
 DBLINK_HTTP_TOKEN=change-me npx @fb0sh/dblink --http 7331
 ```
 
+## CLI
+
+```bash
+dblink                                              # stdio server (default)
+dblink serve --host 0.0.0.0 --port 7331 --token xxx  # HTTP server
+dblink client --url http://127.0.0.1:7331/mcp --token xxx   # interactive REPL
+dblink client --list                                # list tools
+dblink client --tool db_query --args '{"connection_id":"conn_x","sql":"select 1"}'
+```
+
+`dblink serve` requires a token (`--token` or `DBLINK_HTTP_TOKEN`) and refuses to start without one. `dblink client` is a thin MCP client for manual testing and scripts.
+
 MCP client config (stdio) example:
 
 ```json
