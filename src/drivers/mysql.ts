@@ -28,7 +28,7 @@ export class MysqlDriver implements Driver {
     });
     if (this.readOnly) {
       this.pool.on("connection", (conn) => {
-        conn.query("SET SESSION TRANSACTION READ ONLY");
+        void conn.query("SET SESSION TRANSACTION READ ONLY").catch(() => undefined);
       });
     }
     await this.pool.query("select 1");
