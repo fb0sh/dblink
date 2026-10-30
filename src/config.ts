@@ -15,31 +15,51 @@ export class ConfigError extends Error {}
 const DEFAULT_PORT = 7331;
 const DEFAULT_IDLE_MS = 15 * 60 * 1000;
 
+type Command = "stdio" | "serve";
 
+/** Legacy/stdio entry point: `dblink` or `dblink --http [port]`. */
 export function loadConfig(argv: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Config {
+  return buildConfig(argv, env, "stdio");
+}
+
+/** Serve entry point: `dblink serve --host --port --token`. */
+export function loadServeConfig(argv: string[], env: NodeJS.ProcessEnv = process.env): Config {
+  return buildConfig(argv, env, "serve");
+}
+
+function buildConfig(argv: string[], env: NodeJS.ProcessEnv, command: Command): Config {
   const flags = parseFlags(argv);
-  const allowed = new Set(["http", "help", "h"]);
+  const allowed =
+    command === "serve" ? new Set(["host", "port", "token", "help", "h"]) : new Set(["http", "help", "h"]);
   for (const key of flags.keys()) {
     if (!allowed.has(key)) throw new ConfigError(`Unknown option: --${key}`);
   }
 
-  let http = false;
+  const http = command === "serve" ? true : flags.has("http");
   let port = env.DBLINK_PORT ? Number(env.DBLINK_PORT) : DEFAULT_PORT;
-  if (flags.has("http")) {
-    http = true;
-    const value = stringFlag(flags, "http");
-    if (value !== undefined) {
-      if (!/^\d+$/.test(value)) throw new ConfigError(`Invalid --http port: ${value}`);
-      port = Number(value);
+
+  if (command === "serve") {
+    const raw = stringFlag(flags, "port");
+    if (raw !== undefined) {
+      if (!/^\d+$/.test(raw)) throw new ConfigError(`Invalid --port: ${raw}`);
+      port = Number(raw);
+    }
+  } else if (flags.has("http")) {
+    const raw = stringFlag(flags, "http");
+    if (raw !== undefined) {
+      if (!/^\d+$/.test(raw)) throw new ConfigError(`Invalid --http port: ${raw}`);
+      port = Number(raw);
     }
   }
 
-  const host = env.DBLINK_BIND || "127.0.0.1";
-  const token = env.DBLINK_HTTP_TOKEN;
+  const host = (command === "serve" ? stringFlag(flags, "host") : undefined) ?? env.DBLINK_BIND ?? "127.0.0.1";
+  const token = (command === "serve" ? stringFlag(flags, "token") : undefined) ?? env.DBLINK_HTTP_TOKEN;
 
   if (http && !token) {
     throw new ConfigError(
-      "HTTP transport requires DBLINK_HTTP_TOKEN. Refusing to start an unauthenticated HTTP endpoint.",
+      command === "serve"
+        ? "serve requires a token: pass --token or set DBLINK_HTTP_TOKEN"
+        : "HTTP transport requires DBLINK_HTTP_TOKEN. Refusing to start an unauthenticated HTTP endpoint.",
     );
   }
   if (!Number.isInteger(port) || port < 0 || port > 65535) {

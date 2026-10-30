@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-import { parseFlags, stringFlag } from "./cli/args.js";
 import { runClient } from "./cli/client.js";
-import { ConfigError, loadConfig, type Config } from "./config.js";
+import { ConfigError, loadConfig, loadServeConfig, type Config } from "./config.js";
 import { redactSecrets } from "./redact.js";
 import { serveStdio } from "./server.js";
 import { serveHttp } from "./server-http.js";
@@ -39,21 +38,6 @@ async function startHttp(config: Config): Promise<void> {
   process.on("SIGTERM", shutdown);
 }
 
-function serveConfig(argv: string[]): Config {
-  const flags = parseFlags(argv);
-  const base = loadConfig([], process.env);
-  const host = stringFlag(flags, "host") ?? base.host;
-  const rawPort = stringFlag(flags, "port") ?? String(base.port);
-  const port = Number(rawPort);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new ConfigError(`Invalid --port: ${rawPort}`);
-  }
-  const token = stringFlag(flags, "token") ?? base.token;
-  if (!token) {
-    throw new ConfigError("serve requires a token: pass --token or set DBLINK_HTTP_TOKEN");
-  }
-  return { ...base, http: true, host, port, token };
-}
 
 async function legacy(argv: string[]): Promise<void> {
   const config = loadConfig(argv);
@@ -73,7 +57,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "serve") {
-    await startHttp(serveConfig(argv.slice(1)));
+    await startHttp(loadServeConfig(argv.slice(1)));
     return;
   }
   if (cmd === "stdio") {

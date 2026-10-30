@@ -54,9 +54,6 @@ export function createDblinkServer(opts: CreateServerOptions = {}): DblinkApp {
   };
 }
 
-/** Backwards-compatible alias. */
-export const createServer = createDblinkServer;
-
 export async function serveStdio(opts: CreateServerOptions = {}): Promise<DblinkApp> {
   const app = createDblinkServer(opts);
   const transport = new StdioServerTransport();

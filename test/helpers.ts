@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createServer, type CreateServerOptions } from "../src/server";
+import { createDblinkServer, type CreateServerOptions } from "../src/server";
 import { decodeToolResult } from "../src/tool-envelope";
 import type { ConnectionRegistry } from "../src/registry";
 
@@ -40,7 +40,7 @@ export interface Harness {
 }
 
 export async function makeHarness(opts: CreateServerOptions = {}): Promise<Harness> {
-  const { server, registry } = createServer(opts);
+  const { server, registry } = createDblinkServer(opts);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: "test-client", version: "1.0.0" });
