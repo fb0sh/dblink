@@ -4,6 +4,7 @@ import { ConfigError, loadConfig, loadServeConfig, type Config } from "./config.
 import { redactSecrets } from "./redact.js";
 import { serveStdio } from "./server.js";
 import { serveHttp } from "./server-http.js";
+import { VERSION } from "./version.js";
 
 const USAGE = `dblink — MCP server for multi-database access
 
@@ -15,6 +16,7 @@ Usage:
   dblink client [--url URL] [--token T] [--list]
   dblink client --tool <name> --args '<json>'
   dblink --http [port]        legacy alias for serve
+  dblink --version, -v        print version
 
 Environment:
   DBLINK_HTTP_TOKEN   bearer token (required for serve)
@@ -54,6 +56,10 @@ async function main(): Promise<void> {
 
   if (cmd === "client") {
     await runClient(argv.slice(1));
+    return;
+  }
+  if (cmd === "--version" || cmd === "-v") {
+    console.log(VERSION);
     return;
   }
   if (argv.includes("--help") || argv.includes("-h") || cmd === "help") {

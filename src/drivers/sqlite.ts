@@ -1,4 +1,4 @@
-import { DatabaseSync, type StatementSync } from "node:sqlite";
+import type { DatabaseSync, StatementSync } from "node:sqlite";
 import { DblinkError } from "../errors.js";
 import type {
   Driver,
@@ -33,6 +33,9 @@ export class SqliteDriver implements Driver {
   ) {}
 
   async connect(): Promise<void> {
+    // Load node:sqlite lazily so non-SQLite runs (--help/--version, pg/mysql/redis/mongo)
+    // never trigger Node's "SQLite is experimental" warning at import time.
+    const { DatabaseSync } = await import("node:sqlite");
     this.db = new DatabaseSync(this.path);
     if (this.readOnly) this.db.exec("PRAGMA query_only = ON");
   }
