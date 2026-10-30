@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Driver, EngineKind } from "../src/drivers/types";
-import { EngineOperations } from "../src/operations";
+import { SqlOperations } from "../src/ops/sql-ops";
 import { ConnectionRegistry } from "../src/registry";
 
 class HangingDriver implements Driver {
@@ -41,7 +41,7 @@ describe("Connection timeout seam", () => {
       clear: () => undefined,
     };
     const registry = new ConnectionRegistry({ driverFactory: () => new HangingDriver(), scheduler });
-    const operations = new EngineOperations(registry);
+    const operations = new SqlOperations(registry);
     const open = await registry.open("sqlite:fake", { readOnly: true });
 
     await expect(operations.query(open.connection_id, "select 1")).rejects.toMatchObject({ code: "TIMEOUT" });

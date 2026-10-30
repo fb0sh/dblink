@@ -5,11 +5,10 @@ import type {
   MongoFindOptions,
   MongoWriteOperation,
 } from "../drivers/types.js";
-import { DblinkError } from "../errors.js";
 import { assertAggregatePipeline, assertNoServerSideJs } from "../mongo-guard.js";
 import type { ConnectionRegistry } from "../registry.js";
 import { shapeList, shapeRows } from "../result.js";
-import { checkedLimit, guardBytes, listEnvelope, mongoEnvelope, type MongoShaped } from "./shared.js";
+import { assertWritable, checkedLimit, guardBytes, listEnvelope, mongoEnvelope, type ListShaped, type MongoShaped } from "./shared.js";
 
 export class MongoOperations {
   constructor(private readonly registry: ConnectionRegistry) {}
@@ -39,20 +38,18 @@ export class MongoOperations {
     const conn = this.registry.resolve(id);
     assertNoServerSideJs(op.payload.filter);
     assertNoServerSideJs(op.payload.update);
-    if (conn.readOnly) {
-      throw new DblinkError(
-        "READ_ONLY_VIOLATION",
-        "This connection is read-only; mongo_write is not allowed",
-        "Re-open the connection with read_only=false to allow writes.",
-      );
-    }
+    assertWritable(
+      conn,
+      "This connection is read-only; mongo_write is not allowed",
+      "Re-open the connection with read_only=false to allow writes.",
+    );
     return conn.run((d) => mongoOps(d).mongoWrite(op));
   }
 
   async listCollections(
     id: string,
     database?: string,
-  ): Promise<{ collections: string[]; count: number; truncated: boolean; truncation_reason?: "rows" | "bytes" }> {
+  ): Promise<{ collections: string[] } & ListShaped> {
     const conn = this.registry.resolve(id);
     const collections = await conn.run((d) => mongoOps(d).listCollections(database));
     return listEnvelope("collections", shapeList(collections));

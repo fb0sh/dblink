@@ -20,6 +20,18 @@ export interface MongoShaped {
 
 export type Reason = "rows" | "bytes" | undefined;
 
+export interface ListShaped {
+  count: number;
+  truncated: boolean;
+  truncation_reason?: "rows" | "bytes";
+}
+
+export function assertWritable(conn: { readOnly: boolean }, message: string, hint: string): void {
+  if (conn.readOnly) {
+    throw new DblinkError("READ_ONLY_VIOLATION", message, hint);
+  }
+}
+
 export function reasonField(reason: Reason): { truncation_reason?: "rows" | "bytes" } {
   return reason ? { truncation_reason: reason } : {};
 }
@@ -57,16 +69,13 @@ export function mongoEnvelope(shaped: ShapedRows<Record<string, unknown>>): Mong
   };
 }
 
-export function listEnvelope<K extends string, T>(
-  key: K,
-  shaped: ShapedList<T>,
-): { count: number; truncated: boolean; truncation_reason?: "rows" | "bytes" } & Record<K, T[]> {
+export function listEnvelope<K extends string, T>(key: K, shaped: ShapedList<T>): ListShaped & Record<K, T[]> {
   return {
     [key]: shaped.items,
     count: shaped.items.length,
     truncated: shaped.truncated,
     ...reasonField(shaped.reason),
-  } as { count: number; truncated: boolean; truncation_reason?: "rows" | "bytes" } & Record<K, T[]>;
+  } as ListShaped & Record<K, T[]>;
 }
 
 /** Throw LIMIT_EXCEEDED when a single payload exceeds the byte budget. */

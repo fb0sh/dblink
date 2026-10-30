@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toErrorPayload } from "./errors.js";
-import type { EngineOperations } from "./operations.js";
+import type { CapabilityOps } from "./ops/index.js";
 import type { ConnectionRegistry } from "./registry.js";
 
 type ToolResponse = {
@@ -45,9 +45,9 @@ const mongoObject = z.record(z.string(), z.any());
 /**
  * The tool module is a declarative adapter: a ToolSpec table plus one generic
  * registration helper. Capability dispatch, guards and limits live behind
- * EngineOperations.
+ * the capability operations (ops.sql / ops.mongo / ops.redis).
  */
-export function registerTools(server: McpServer, registry: ConnectionRegistry, operations: EngineOperations): void {
+export function registerTools(server: McpServer, registry: ConnectionRegistry, ops: CapabilityOps): void {
   const specs: ToolSpec[] = [
     {
       name: "open_connection",
@@ -99,31 +99,31 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry, o
         limit: z.number().int().positive().optional(),
       },
       handler: ({ connection_id, sql, params, limit }) =>
-        operations.query(connection_id, sql, params, { requestedLimit: limit }),
+        ops.sql.query(connection_id, sql, params, { requestedLimit: limit }),
     },
     {
       name: "db_execute",
       description: "Run a write statement on a writable connection (read_only=false). Returns affected_rows.",
       schema: { connection_id: z.string(), sql: z.string(), params: z.array(z.any()).optional() },
-      handler: ({ connection_id, sql, params }) => operations.execute(connection_id, sql, params),
+      handler: ({ connection_id, sql, params }) => ops.sql.execute(connection_id, sql, params),
     },
     {
       name: "db_list_tables",
       description: "List tables/views in the connected database.",
       schema: { connection_id: z.string(), schema: z.string().optional() },
-      handler: ({ connection_id, schema }) => operations.listTables(connection_id, schema),
+      handler: ({ connection_id, schema }) => ops.sql.listTables(connection_id, schema),
     },
     {
       name: "db_describe_table",
       description: "Describe a table: columns (name/type/nullable/default) and indexes.",
       schema: { connection_id: z.string(), table: z.string(), schema: z.string().optional() },
-      handler: ({ connection_id, table, schema }) => operations.describeTable(connection_id, table, schema),
+      handler: ({ connection_id, table, schema }) => ops.sql.describeTable(connection_id, table, schema),
     },
     {
       name: "redis_command",
       description: "Run a read-only Redis command (allow-list). Writes return UNSUPPORTED.",
       schema: { connection_id: z.string(), command: z.string(), args: z.array(z.string()).optional() },
-      handler: ({ connection_id, command, args }) => operations.redisCommand(connection_id, command, args ?? []),
+      handler: ({ connection_id, command, args }) => ops.redis.command(connection_id, command, args ?? []),
     },
     {
       name: "mongo_find",
@@ -139,7 +139,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry, o
         database: z.string().optional(),
       },
       handler: ({ connection_id, collection, filter, projection, sort, limit, database }) =>
-        operations.mongoFind(connection_id, collection, { filter, projection, sort, limit, database }),
+        ops.mongo.find(connection_id, collection, { filter, projection, sort, limit, database }),
     },
     {
       name: "mongo_aggregate",
@@ -152,7 +152,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry, o
         database: z.string().optional(),
       },
       handler: ({ connection_id, collection, pipeline, limit, database }) =>
-        operations.mongoAggregate(connection_id, collection, pipeline as unknown[], { limit, database }),
+        ops.mongo.aggregate(connection_id, collection, pipeline as unknown[], { limit, database }),
     },
     {
       name: "mongo_write",
@@ -165,7 +165,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry, o
         database: z.string().optional(),
       },
       handler: async ({ connection_id, collection, action, payload, database }) => {
-        const res = await operations.mongoWrite(connection_id, { collection, action, payload, database });
+        const res = await ops.mongo.write(connection_id, { collection, action, payload, database });
         return { action, collection, ...res };
       },
     },
@@ -173,14 +173,14 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry, o
       name: "mongo_list_collections",
       description: "List collections in a MongoDB database.",
       schema: { connection_id: z.string(), database: z.string().optional() },
-      handler: ({ connection_id, database }) => operations.mongoListCollections(connection_id, database),
+      handler: ({ connection_id, database }) => ops.mongo.listCollections(connection_id, database),
     },
     {
       name: "mongo_describe_collection",
       description: "Describe a MongoDB collection: sample document (EJSON), indexes and inferred fields.",
       schema: { connection_id: z.string(), collection: z.string(), database: z.string().optional() },
       handler: ({ connection_id, collection, database }) =>
-        operations.mongoDescribeCollection(connection_id, collection, database),
+        ops.mongo.describeCollection(connection_id, collection, database),
     },
   ];
 

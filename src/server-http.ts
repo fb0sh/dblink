@@ -46,20 +46,35 @@ export function isAuthorized(req: http.IncomingMessage, token: string): boolean 
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
-export function readBody(req: http.IncomingMessage): Promise<unknown> {
+export const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+export class BodyTooLargeError extends Error {
+  readonly status = 413;
+  constructor() {
+    super("Request body too large");
+    this.name = "BodyTooLargeError";
+  }
+}
+
+export function readBody(req: http.IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    let settled = false;
     req.on("data", (chunk: Buffer) => {
+      if (settled) return;
       size += chunk.length;
-      if (size > 4 * 1024 * 1024) {
-        reject(new Error("Request body too large"));
-        req.destroy();
+      if (size > maxBytes) {
+        settled = true;
+        reject(new BodyTooLargeError());
+        req.resume(); // drain without destroying, so the 413 response can be written
         return;
       }
       chunks.push(chunk);
     });
     req.on("end", () => {
+      if (settled) return;
+      settled = true;
       if (chunks.length === 0) return resolve(undefined);
       const text = Buffer.concat(chunks).toString("utf8");
       if (!text.trim()) return resolve(undefined);
@@ -69,8 +84,35 @@ export function readBody(req: http.IncomingMessage): Promise<unknown> {
         reject(e);
       }
     });
-    req.on("error", reject);
+    req.on("error", (e) => {
+      if (!settled) {
+        settled = true;
+        reject(e);
+      }
+    });
   });
+}
+
+export type RequestClass = "unauthorized" | "bad-request" | "unknown-session" | "initialize" | "forward";
+
+/** Pure classification of an inbound MCP HTTP request (unit-testable, no socket). */
+export function classifyRequest(input: {
+  authorized: boolean;
+  method?: string;
+  hasSessionId: boolean;
+  hasSession: boolean;
+  body: unknown;
+}): RequestClass {
+  if (!input.authorized) return "unauthorized";
+  const isInitialize =
+    input.method === "POST" &&
+    typeof input.body === "object" &&
+    input.body !== null &&
+    !Array.isArray(input.body) &&
+    (input.body as { method?: string }).method === "initialize";
+  if (input.hasSession) return "forward";
+  if (isInitialize) return "initialize";
+  return input.hasSessionId ? "unknown-session" : "bad-request";
 }
 
 async function createSession(core: DblinkCore, sessions: SessionStore): Promise<Session> {
@@ -85,6 +127,69 @@ async function createSession(core: DblinkCore, sessions: SessionStore): Promise<
   return session;
 }
 
+export function createRequestHandler(options: {
+  core: DblinkCore;
+  sessions: SessionStore;
+  token: string;
+}): (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void> {
+  const { core, sessions, token } = options;
+  return async (req, res) => {
+    if (!isAuthorized(req, token)) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    let body: unknown;
+    if (req.method === "POST") {
+      try {
+        body = await readBody(req);
+      } catch (e) {
+        const status = e instanceof BodyTooLargeError ? e.status : 400;
+        const message = e instanceof Error ? e.message : "Bad request";
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: message }));
+        return;
+      }
+    }
+
+    const sessionHeader = req.headers["mcp-session-id"];
+    const sessionId = typeof sessionHeader === "string" ? sessionHeader : undefined;
+    const session = sessionId ? sessions.get(sessionId) : undefined;
+    const kind = classifyRequest({
+      authorized: true,
+      method: req.method,
+      hasSessionId: Boolean(sessionId),
+      hasSession: Boolean(session),
+      body,
+    });
+
+    try {
+      if (kind === "initialize") {
+        const created = await createSession(core, sessions);
+        await created.transport.handleRequest(req, res, body);
+        const id = created.transport.sessionId;
+        if (id) sessions.add(id, created);
+        return;
+      }
+      if (kind === "forward") {
+        await session!.transport.handleRequest(req, res, body);
+        return;
+      }
+      const status = kind === "unknown-session" ? 404 : 400;
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: kind === "unknown-session" ? "Unknown session" : "Missing session" }));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Internal error";
+      console.error(`dblink: http handler error: ${redactSecrets(message)}`);
+      if (!res.headersSent) {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: message }));
+      }
+    }
+  };
+}
+
 export async function serveHttp(config: Config): Promise<HttpServerHandle> {
   if (!config.token) throw new Error("HTTP transport requires DBLINK_HTTP_TOKEN");
   const token = config.token;
@@ -96,49 +201,10 @@ export async function serveHttp(config: Config): Promise<HttpServerHandle> {
     maxPools: config.maxPools,
   });
   const sessions = new SessionStore();
+  const handler = createRequestHandler({ core, sessions, token });
 
   const httpServer = http.createServer((req, res) => {
-    void (async () => {
-      if (!isAuthorized(req, token)) {
-        res.writeHead(401, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
-        return;
-      }
-      try {
-        const sessionHeader = req.headers["mcp-session-id"];
-        const sessionId = typeof sessionHeader === "string" ? sessionHeader : undefined;
-        const body = req.method === "POST" ? await readBody(req) : undefined;
-
-        let session = sessionId ? sessions.get(sessionId) : undefined;
-
-        if (!session) {
-          const isInitialize =
-            req.method === "POST" &&
-            typeof body === "object" &&
-            body !== null &&
-            (body as { method?: string }).method === "initialize";
-          if (isInitialize) {
-            session = await createSession(core, sessions);
-            await session.transport.handleRequest(req, res, body);
-            const id = session.transport.sessionId;
-            if (id) sessions.add(id, session);
-            return;
-          }
-          res.writeHead(sessionId ? 404 : 400, { "content-type": "application/json" });
-          res.end(JSON.stringify({ error: sessionId ? "Unknown session" : "Missing session" }));
-          return;
-        }
-
-        await session.transport.handleRequest(req, res, body);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "Internal error";
-        console.error(`dblink: http handler error: ${redactSecrets(message)}`);
-        if (!res.headersSent) {
-          res.writeHead(500, { "content-type": "application/json" });
-          res.end(JSON.stringify({ error: e instanceof Error ? e.message : "Internal error" }));
-        }
-      }
-    })();
+    void handler(req, res);
   });
 
   await new Promise<void>((resolve, reject) => {

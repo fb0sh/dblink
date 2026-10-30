@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Config } from "../src/config";
-import { startHttpServer } from "../src/http";
+import { serveHttp } from "../src/server-http";
 
 const baseConfig: Config = {
   http: true,
@@ -23,11 +23,11 @@ const initializeBody = JSON.stringify({
 
 describe("09 — HTTP transport auth (S3)", () => {
   it("refuses to start without a token", async () => {
-    await expect(startHttpServer({ ...baseConfig, token: undefined })).rejects.toThrow(/DBLINK_HTTP_TOKEN/);
+    await expect(serveHttp({ ...baseConfig, token: undefined })).rejects.toThrow(/DBLINK_HTTP_TOKEN/);
   });
 
   it("rejects missing and wrong bearer tokens, accepts the right one", async () => {
-    const handle = await startHttpServer(baseConfig);
+    const handle = await serveHttp(baseConfig);
     try {
       const url = `http://127.0.0.1:${handle.port}/mcp`;
       const noAuth = await fetch(url, {
@@ -64,7 +64,7 @@ describe("09 — HTTP transport auth (S3)", () => {
   });
 
   it("serves tools end-to-end over HTTP with a valid token", async () => {
-    const handle = await startHttpServer(baseConfig);
+    const handle = await serveHttp(baseConfig);
     try {
       const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${handle.port}/mcp`), {
         requestInit: { headers: { authorization: "Bearer test-token" } },

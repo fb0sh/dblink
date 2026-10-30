@@ -256,14 +256,6 @@ export class ConnectionRegistry {
     return new Connection(this.require(id), this.clock, this.statementTimeoutMs, this.scheduler);
   }
 
-  kindOf(id: string): EngineKind {
-    return this.require(id).kind;
-  }
-
-  isReadOnly(id: string): boolean {
-    return this.require(id).readOnly;
-  }
-
   async list(): Promise<PublicConnection[]> {
     const now = this.clock();
     const out: PublicConnection[] = [];

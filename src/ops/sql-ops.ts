@@ -1,9 +1,8 @@
 import { sqlOps } from "../drivers/types.js";
-import { DblinkError } from "../errors.js";
 import { assertReadOnlySql, assertSingleStatement } from "../guard.js";
 import type { ConnectionRegistry } from "../registry.js";
 import { shapeList, shapeRows } from "../result.js";
-import { checkedLimit, listEnvelope, queryEnvelope, type QueryShaped } from "./shared.js";
+import { assertWritable, checkedLimit, listEnvelope, queryEnvelope, type ListShaped, type QueryShaped } from "./shared.js";
 
 export class SqlOperations {
   constructor(private readonly registry: ConnectionRegistry) {}
@@ -23,13 +22,11 @@ export class SqlOperations {
 
   async execute(id: string, sql: string, params?: unknown[]): Promise<{ affected_rows: number }> {
     const conn = this.registry.resolve(id);
-    if (conn.readOnly) {
-      throw new DblinkError(
-        "READ_ONLY_VIOLATION",
-        "This connection is read-only; db_execute is not allowed",
-        "Re-open the connection with read_only=false to allow writes.",
-      );
-    }
+    assertWritable(
+      conn,
+      "This connection is read-only; db_execute is not allowed",
+      "Re-open the connection with read_only=false to allow writes.",
+    );
     assertSingleStatement(sql);
     const res = await conn.run((d) => sqlOps(d).execute(sql, params));
     return { affected_rows: res.affectedRows };
@@ -38,7 +35,7 @@ export class SqlOperations {
   async listTables(
     id: string,
     schema?: string,
-  ): Promise<{ tables: string[]; count: number; truncated: boolean; truncation_reason?: "rows" | "bytes" }> {
+  ): Promise<{ tables: string[] } & ListShaped> {
     const conn = this.registry.resolve(id);
     const tables = await conn.run((d) => sqlOps(d).listTables(schema));
     return listEnvelope("tables", shapeList(tables));

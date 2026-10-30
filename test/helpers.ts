@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer, type CreateServerOptions } from "../src/server";
+import { decodeToolResult } from "../src/tool-envelope";
 import type { ConnectionRegistry } from "../src/registry";
 
 const TMP_DIR = join(process.cwd(), "tmp", "tests");
@@ -47,8 +48,7 @@ export async function makeHarness(opts: CreateServerOptions = {}): Promise<Harne
 
   async function call(name: string, args: Record<string, unknown> = {}): Promise<CallResult> {
     const res: any = await client.callTool({ name, arguments: args });
-    const text = res?.content?.[0]?.text;
-    return { json: text ? JSON.parse(text) : undefined, isError: res?.isError === true };
+    return decodeToolResult(res);
   }
 
   return {

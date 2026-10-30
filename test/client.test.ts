@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config";
-import { startHttpServer } from "../src/http";
+import { serveHttp } from "../src/server-http";
 import { callRemoteTool, listRemoteTools, parseClientArgs } from "../src/cli/client";
 import { createDblinkClient } from "../src/client";
 
@@ -27,7 +27,7 @@ describe("dblink client", () => {
   });
 
   it("lists tools and calls a remote tool end-to-end", async () => {
-    const handle = await startHttpServer(baseConfig);
+    const handle = await serveHttp(baseConfig);
     try {
       const url = `http://127.0.0.1:${handle.port}/mcp`;
       const tools = await listRemoteTools({ url, token: "client-token" });
@@ -52,7 +52,7 @@ describe("dblink client", () => {
   });
 
   it("reuses one session through createDblinkClient", async () => {
-    const handle = await startHttpServer(baseConfig);
+    const handle = await serveHttp(baseConfig);
     try {
       const url = `http://127.0.0.1:${handle.port}/mcp`;
       const client = await createDblinkClient({ url, token: "client-token" });
@@ -73,7 +73,7 @@ describe("dblink client", () => {
   });
 
   it("rejects a wrong token", async () => {
-    const handle = await startHttpServer(baseConfig);
+    const handle = await serveHttp(baseConfig);
     try {
       const url = `http://127.0.0.1:${handle.port}/mcp`;
       await expect(listRemoteTools({ url, token: "wrong" })).rejects.toBeTruthy();

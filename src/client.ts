@@ -1,4 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { decodeToolResult } from "./tool-envelope.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 export interface RemoteOptions {
@@ -39,8 +40,7 @@ export async function createDblinkClient(opts: RemoteOptions): Promise<DblinkCli
     },
     async call(name: string, args: Record<string, unknown> = {}): Promise<ToolCallResult> {
       const res: any = await client.callTool({ name, arguments: args });
-      const text = res?.content?.[0]?.text;
-      return { json: text ? JSON.parse(text) : undefined, isError: res?.isError === true };
+      return decodeToolResult(res);
     },
     async close(): Promise<void> {
       if (closed) return;
