@@ -37,6 +37,22 @@ for (const engine of engines) {
   });
 }
 
+const mongoDsn = process.env.DBLINK_TEST_MONGO_DSN;
+describe.skipIf(!mongoDsn)("S2 conformance — mongodb", () => {
+  it("opens, lists collections and closes", async () => {
+    const h = await makeHarness();
+    try {
+      const open = await h.call("open_connection", { dsn: mongoDsn });
+      expect(open.json.kind).toBe("mongodb");
+      const list = await h.call("mongo_list_collections", { connection_id: open.json.connection_id });
+      expect(list.json.ok).toBe(true);
+      await h.call("close_connection", { connection_id: open.json.connection_id });
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 const redisDsn = process.env.DBLINK_TEST_REDIS_DSN;
 describe.skipIf(!redisDsn)("S2 conformance — redis", () => {
   it("opens, runs a read-only command, rejects writes, closes", async () => {

@@ -49,14 +49,14 @@ export interface MongoAggregateOptions {
 export interface MongoWriteOperation {
   database?: string;
   collection: string;
-  action: "insert" | "update" | "delete";
+  action: string;
   payload: Record<string, unknown>;
 }
 
 export interface MongoCollectionDescription {
   sample_document: unknown;
   indexes: unknown[];
-  fields: string[];
+  inferred_fields: string[];
 }
 
 export interface Driver {

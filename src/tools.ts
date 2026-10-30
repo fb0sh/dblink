@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { DblinkError, toErrorPayload } from "./errors.js";
 import { assertReadOnlySql, assertSingleStatement } from "./guard.js";
-import { assertAggregatePipeline } from "./mongo-guard.js";
+import { assertAggregatePipeline, assertNoServerSideJs } from "./mongo-guard.js";
 import type { ConnectionRegistry } from "./registry.js";
 import { MAX_BYTES, MAX_LIMIT, shapeList } from "./result.js";
 
@@ -292,6 +292,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
     async ({ connection_id, collection, filter, projection, sort, limit, database }) =>
       run(async () => {
         requireMongoEngine(registry, connection_id);
+        assertNoServerSideJs(filter);
         if (limit !== undefined && limit > MAX_LIMIT) {
           throw new DblinkError("LIMIT_EXCEEDED", `Requested limit ${limit} exceeds the maximum of ${MAX_LIMIT}`);
         }
@@ -319,7 +320,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
       inputSchema: {
         connection_id: z.string(),
         collection: z.string(),
-        pipeline: z.array(mongoObject),
+        pipeline: z.unknown(),
         limit: z.number().int().positive().optional(),
         database: z.string().optional(),
       },
@@ -327,14 +328,18 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
     async ({ connection_id, collection, pipeline, limit, database }) =>
       run(async () => {
         requireMongoEngine(registry, connection_id);
+        if (limit !== undefined && limit > MAX_LIMIT) {
+          throw new DblinkError("LIMIT_EXCEEDED", `Requested limit ${limit} exceeds the maximum of ${MAX_LIMIT}`);
+        }
         const readOnly = registry.isReadOnly(connection_id);
         assertAggregatePipeline(pipeline, readOnly);
-        const res = await registry.mongoAggregate(connection_id, collection, pipeline, { limit, database });
+        const res = await registry.mongoAggregate(connection_id, collection, pipeline as unknown[], { limit, database });
         return {
           documents: res.documents,
           count: res.documents.length,
           truncated: res.truncated,
           ...(res.reason ? { truncation_reason: res.reason } : {}),
+          row_limit: res.row_limit,
         };
       }),
   );
@@ -347,7 +352,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
       inputSchema: {
         connection_id: z.string(),
         collection: z.string(),
-        action: z.enum(["insert", "update", "delete"]),
+        action: z.string(),
         payload: mongoObject,
         database: z.string().optional(),
       },
@@ -402,7 +407,7 @@ export function registerTools(server: McpServer, registry: ConnectionRegistry): 
           collection,
           sample_document: desc.sample_document,
           indexes: indexes.items,
-          fields: desc.fields,
+          inferred_fields: desc.inferred_fields,
           truncated: indexes.truncated,
         };
       }),

@@ -11,7 +11,10 @@ import type {
   MongoWriteOperation,
   TableDescription,
 } from "./drivers/types.js";
+import { assertAggregatePipeline } from "./mongo-guard.js";
 import { effectiveRowLimit, shapeRows } from "./result.js";
+
+const STATEMENT_TIMEOUT_MS = 30000;
 
 export interface RegistryOptions {
   poolSize?: number;
@@ -60,6 +63,16 @@ export interface MongoShaped {
   truncated: boolean;
   reason?: "rows" | "bytes";
   row_limit: number;
+}
+
+function shapeMongoDocs(docs: Record<string, unknown>[], requestedLimit?: number): MongoShaped {
+  const shaped = shapeRows(docs, { requestedLimit });
+  return {
+    documents: shaped.rows,
+    truncated: shaped.truncated,
+    ...(shaped.reason ? { reason: shaped.reason } : {}),
+    row_limit: shaped.rowLimit,
+  };
 }
 
 interface Entry {
@@ -212,8 +225,8 @@ export class ConnectionRegistry {
     const entry = this.require(id);
     const limit = effectiveRowLimit(opts.requestedLimit);
     const raw = await this.withTimeout(
-      this.withReconnect(entry, (d) => d.query(sql, params, { maxRows: limit + 1, timeoutMs: opts.timeoutMs ?? 30000 })),
-      opts.timeoutMs ?? 30000,
+      this.withReconnect(entry, (d) => d.query(sql, params, { maxRows: limit + 1, timeoutMs: opts.timeoutMs ?? STATEMENT_TIMEOUT_MS })),
+      opts.timeoutMs ?? STATEMENT_TIMEOUT_MS,
     );
     const shaped = shapeRows(raw.rows, { requestedLimit: opts.requestedLimit });
     return {
@@ -256,15 +269,9 @@ export class ConnectionRegistry {
     const limit = effectiveRowLimit(opts.limit);
     const docs = await this.withTimeout(
       this.withReconnect(entry, (d) => d.find!(collection, { ...opts, limit: limit + 1 })),
-      30000,
+      STATEMENT_TIMEOUT_MS,
     );
-    const shaped = shapeRows(docs, { requestedLimit: opts.limit });
-    return {
-      documents: shaped.rows,
-      truncated: shaped.truncated,
-      ...(shaped.reason ? { reason: shaped.reason } : {}),
-      row_limit: shaped.rowLimit,
-    };
+    return shapeMongoDocs(docs, opts.limit);
   }
 
   async mongoAggregate(
@@ -277,18 +284,13 @@ export class ConnectionRegistry {
     if (entry.kind !== "mongodb" || !entry.driver.aggregate) {
       throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_aggregate");
     }
+    assertAggregatePipeline(pipeline, entry.readOnly);
     const limit = effectiveRowLimit(opts.limit);
     const docs = await this.withTimeout(
       this.withReconnect(entry, (d) => d.aggregate!(collection, pipeline, { ...opts, limit: limit + 1 })),
-      30000,
+      STATEMENT_TIMEOUT_MS,
     );
-    const shaped = shapeRows(docs, { requestedLimit: opts.limit });
-    return {
-      documents: shaped.rows,
-      truncated: shaped.truncated,
-      ...(shaped.reason ? { reason: shaped.reason } : {}),
-      row_limit: shaped.rowLimit,
-    };
+    return shapeMongoDocs(docs, opts.limit);
   }
 
   async mongoWrite(id: string, op: MongoWriteOperation): Promise<Record<string, unknown>> {
@@ -303,15 +305,15 @@ export class ConnectionRegistry {
         "Re-open the connection with read_only=false to allow writes.",
       );
     }
-    return this.withTimeout(this.withReconnect(entry, (d) => d.mongoWrite!(op)), 30000);
+    return this.withTimeout(this.withReconnect(entry, (d) => d.mongoWrite!(op)), STATEMENT_TIMEOUT_MS);
   }
 
   async mongoListCollections(id: string, database?: string): Promise<string[]> {
     const entry = this.require(id);
-    if (!entry.driver.listCollections) {
+    if (entry.kind !== "mongodb" || !entry.driver.listCollections) {
       throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_list_collections");
     }
-    return this.withTimeout(this.withReconnect(entry, (d) => d.listCollections!(database)), 30000);
+    return this.withTimeout(this.withReconnect(entry, (d) => d.listCollections!(database)), STATEMENT_TIMEOUT_MS);
   }
 
   async mongoDescribeCollection(
@@ -320,10 +322,10 @@ export class ConnectionRegistry {
     database?: string,
   ): Promise<MongoCollectionDescription> {
     const entry = this.require(id);
-    if (!entry.driver.describeCollection) {
+    if (entry.kind !== "mongodb" || !entry.driver.describeCollection) {
       throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_describe_collection");
     }
-    return this.withTimeout(this.withReconnect(entry, (d) => d.describeCollection!(collection, database)), 30000);
+    return this.withTimeout(this.withReconnect(entry, (d) => d.describeCollection!(collection, database)), STATEMENT_TIMEOUT_MS);
   }
 
   async command(id: string, command: string, args: string[]): Promise<unknown> {
@@ -331,7 +333,7 @@ export class ConnectionRegistry {
     if (!entry.driver.command) {
       throw new DblinkError("UNSUPPORTED", "This connection does not support raw commands");
     }
-    return this.withTimeout(this.withReconnect(entry, (d) => d.command!(command, args)), 30000);
+    return this.withTimeout(this.withReconnect(entry, (d) => d.command!(command, args)), STATEMENT_TIMEOUT_MS);
   }
 
   async list(): Promise<PublicConnection[]> {

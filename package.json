@@ -20,7 +20,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run test/drivers.conformance.test.ts"
+    "test:integration": "vitest run test/drivers.conformance.test.ts test/mongo.integration.test.ts"
   },
   "publishConfig": {
     "access": "public"

@@ -1,9 +1,9 @@
 # dblink
 
-A Model Context Protocol (MCP) server that lets an agent talk to multiple databases through a small, uniform tool surface: **PostgreSQL**, **MySQL**, **Redis** and **SQLite** (MongoDB planned for v2).
+A Model Context Protocol (MCP) server that lets an agent talk to multiple databases through a small, uniform tool surface: **PostgreSQL**, **MySQL**, **Redis**, **SQLite** and **MongoDB**.
 
 ```
-open_connection(dsn) ──▶ connection_id ──▶ db_query / db_execute / db_list_tables / db_describe_table / redis_command ──▶ close_connection
+open_connection(dsn) ──▶ connection_id ──▶ db_query / db_execute / db_list_tables / db_describe_table / redis_command / mongo_find / mongo_aggregate / mongo_write / mongo_list_collections / mongo_describe_collection ──▶ close_connection
 ```
 
 ## Install & run

@@ -1,5 +1,5 @@
 import { EJSON } from "bson";
-import { MongoClient, type Db, type Document } from "mongodb";
+import { MongoClient, type Db, type Document, type FindOptions } from "mongodb";
 import { DblinkError } from "../errors.js";
 import type {
   Driver,
@@ -14,17 +14,30 @@ import type {
 } from "./types.js";
 
 function defaultDatabaseFromDsn(dsn: string): string {
+  // new URL() rejects multi-host DSNs like mongodb://h1,h2/db, so fall back to
+  // a scheme-aware regex that still extracts the database path.
   try {
-    const u = new URL(dsn);
-    const db = decodeURIComponent((u.pathname || "").replace(/^\//, ""));
-    return db || "test";
+    const parsed = new URL(dsn);
+    return decodeURIComponent((parsed.pathname || "").replace(/^\//, "")) || "test";
   } catch {
-    return "test";
+    const match = /^mongodb(?:\+srv)?:\/\/[^/]*\/([^?]*)/i.exec(dsn);
+    if (!match) {
+      throw new DblinkError("SQL_ERROR", "Invalid MongoDB DSN", "Expected mongodb:// or mongodb+srv:// URL.");
+    }
+    return decodeURIComponent(match[1] || "") || "test";
   }
 }
 
-function toPlain(value: unknown): Record<string, unknown> {
+function toRelaxedEjson(value: unknown): Record<string, unknown> {
   return EJSON.serialize(value, { relaxed: true }) as Record<string, unknown>;
+}
+
+function deserializeEjson(value: unknown): Document {
+  return EJSON.deserialize(value as never) as Document;
+}
+
+function deserializeEjsonArray(value: unknown): Document[] {
+  return EJSON.deserialize(value as never) as Document[];
 }
 
 export class MongoDriver implements Driver {
@@ -72,14 +85,14 @@ export class MongoDriver implements Driver {
   }
 
   async find(collection: string, opts: MongoFindOptions): Promise<Record<string, unknown>[]> {
-    const filter: Document = opts.filter !== undefined ? (EJSON.deserialize(opts.filter as never) as Document) : {};
-    const options: any = {};
-    if (opts.projection !== undefined) options.projection = EJSON.deserialize(opts.projection as never) as Document;
-    if (opts.sort !== undefined) options.sort = EJSON.deserialize(opts.sort as never) as Document;
+    const filter: Document = opts.filter !== undefined ? deserializeEjson(opts.filter) : {};
+    const options: FindOptions = {};
+    if (opts.projection !== undefined) options.projection = deserializeEjson(opts.projection);
+    if (opts.sort !== undefined) options.sort = deserializeEjson(opts.sort) as FindOptions["sort"];
     let cursor = this.db(opts.database).collection(collection).find(filter, options);
     if (opts.limit) cursor = cursor.limit(opts.limit);
     const docs = await cursor.toArray();
-    return docs.map(toPlain);
+    return docs.map(toRelaxedEjson);
   }
 
   async aggregate(
@@ -87,10 +100,11 @@ export class MongoDriver implements Driver {
     pipeline: unknown[],
     opts: MongoAggregateOptions,
   ): Promise<Record<string, unknown>[]> {
-    const stages = EJSON.deserialize(pipeline as never) as Document[];
-    let docs = await this.db(opts.database).collection(collection).aggregate(stages).toArray();
-    if (opts.limit) docs = docs.slice(0, opts.limit);
-    return docs.map(toPlain);
+    const stages = deserializeEjsonArray(pipeline);
+    let cursor = this.db(opts.database).collection(collection).aggregate(stages);
+    if (opts.limit) cursor = cursor.limit(opts.limit);
+    const docs = await cursor.toArray();
+    return docs.map(toRelaxedEjson);
   }
 
   async mongoWrite(op: MongoWriteOperation): Promise<Record<string, unknown>> {
@@ -101,12 +115,12 @@ export class MongoDriver implements Driver {
       if (!Array.isArray(documents) || documents.length === 0) {
         throw new DblinkError("SQL_ERROR", "insert requires a non-empty documents array");
       }
-      const res = await collection.insertMany(documents.map((d) => EJSON.deserialize(d as never) as Document) as Document[]);
+      const res = await collection.insertMany(documents.map((d) => deserializeEjson(d)));
       return { inserted_count: res.insertedCount, inserted_ids: EJSON.serialize(res.insertedIds, { relaxed: true }) };
     }
     if (op.action === "update") {
-      const filter = EJSON.deserialize(payload.filter ?? {} as never) as Document;
-      const update = EJSON.deserialize(payload.update ?? {} as never) as Document;
+      const filter = deserializeEjson(payload.filter ?? {});
+      const update = deserializeEjson(payload.update ?? {});
       const options = { upsert: Boolean(payload.upsert) };
       const res = payload.multi
         ? await collection.updateMany(filter, update, options)
@@ -118,7 +132,7 @@ export class MongoDriver implements Driver {
       };
     }
     if (op.action === "delete") {
-      const filter = EJSON.deserialize(payload.filter ?? {} as never) as Document;
+      const filter = deserializeEjson(payload.filter ?? {});
       const res = payload.multi ? await collection.deleteMany(filter) : await collection.deleteOne(filter);
       return { deleted_count: res.deletedCount };
     }
@@ -131,7 +145,16 @@ export class MongoDriver implements Driver {
   }
 
   async describeCollection(collection: string, database?: string): Promise<MongoCollectionDescription> {
-    const coll = this.db(database).collection(collection);
+    const db = this.db(database);
+    const exists = await db.listCollections({ name: collection }, { nameOnly: true }).toArray();
+    if (exists.length === 0) {
+      throw new DblinkError(
+        "SQL_ERROR",
+        `Collection not found: ${collection}`,
+        "Run mongo_list_collections to see available collections.",
+      );
+    }
+    const coll = db.collection(collection);
     const sample = await coll.find({}).limit(5).toArray();
     const indexes = await coll.indexes();
     const fields = new Set<string>();
@@ -139,9 +162,9 @@ export class MongoDriver implements Driver {
       for (const key of Object.keys(doc)) fields.add(key);
     }
     return {
-      sample_document: sample[0] ? toPlain(sample[0]) : null,
+      sample_document: sample[0] ? toRelaxedEjson(sample[0]) : null,
       indexes: indexes.map((i) => EJSON.serialize(i, { relaxed: true })),
-      fields: [...fields],
+      inferred_fields: [...fields],
     };
   }
 

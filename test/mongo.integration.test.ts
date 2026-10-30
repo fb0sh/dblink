@@ -104,8 +104,71 @@ describe.skipIf(!dsn)("MongoDB — S1 tool boundary + S2 conformance", () => {
 
     const desc = await h.call("mongo_describe_collection", { connection_id: writableId, collection });
     expect(desc.json.ok).toBe(true);
-    expect(desc.json.fields).toContain("name");
+    expect(desc.json.inferred_fields).toContain("name");
     expect(Array.isArray(desc.json.indexes)).toBe(true);
+  });
+
+  it("reports truncation on large result sets", async () => {
+    const many = `many_${Date.now()}`;
+    const documents = Array.from({ length: 150 }, (_, i) => ({ i }));
+    const ins = await h.call("mongo_write", {
+      connection_id: writableId,
+      collection: many,
+      action: "insert",
+      payload: { documents },
+    });
+    expect(ins.json.inserted_count).toBe(150);
+    const res = await h.call("mongo_find", { connection_id: writableId, collection: many });
+    expect(res.json.count).toBe(100);
+    expect(res.json.truncated).toBe(true);
+    expect(res.json.truncation_reason).toBe("rows");
+  });
+
+  it("truncates by byte budget", async () => {
+    const big = `big_${Date.now()}`;
+    await h.call("mongo_write", {
+      connection_id: writableId,
+      collection: big,
+      action: "insert",
+      payload: { documents: [{ blob: "x".repeat(300 * 1024) }] },
+    });
+    const res = await h.call("mongo_find", { connection_id: writableId, collection: big });
+    expect(res.json.truncated).toBe(true);
+    expect(res.json.truncation_reason).toBe("bytes");
+  });
+
+  it("rejects non-array pipelines and unknown actions with SQL_ERROR", async () => {
+    const noPipeline = await h.call("mongo_aggregate", {
+      connection_id: writableId,
+      collection,
+      pipeline: { $match: {} },
+    });
+    expect(noPipeline.json.error.code).toBe("SQL_ERROR");
+
+    const badAction = await h.call("mongo_write", {
+      connection_id: writableId,
+      collection,
+      action: "upsert",
+      payload: {},
+    });
+    expect(badAction.json.error.code).toBe("SQL_ERROR");
+  });
+
+  it("rejects $where in a mongo_find filter", async () => {
+    const res = await h.call("mongo_find", {
+      connection_id: writableId,
+      collection,
+      filter: { $where: "true" },
+    });
+    expect(res.json.error.code).toBe("UNSUPPORTED");
+  });
+
+  it("returns SQL_ERROR for a missing collection", async () => {
+    const res = await h.call("mongo_describe_collection", {
+      connection_id: writableId,
+      collection: `missing_${Date.now()}`,
+    });
+    expect(res.json.error.code).toBe("SQL_ERROR");
   });
 
   it("blocks a write on a read-only connection", async () => {
