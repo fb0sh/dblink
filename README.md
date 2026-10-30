@@ -38,6 +38,28 @@ MCP client config (stdio) example:
 }
 ```
 
+## Library usage (integration)
+
+Hold one MCP session instead of reconnecting per call:
+
+```js
+import { createDblinkClient } from "@fb0sh/dblink/client";
+
+const dblink = await createDblinkClient({
+  url: "http://127.0.0.1:7331/mcp",
+  token: process.env.DBLINK_HTTP_TOKEN,
+});
+const tools = await dblink.listTools();
+const opened = await dblink.call("open_connection", { dsn: "sqlite::memory:" });
+const rows = await dblink.call("db_query", {
+  connection_id: opened.json.connection_id,
+  sql: "select 1 as v",
+});
+await dblink.close();
+```
+
+`createDblinkClient` keeps the session alive (one initialize handshake). Use `callOnce(...)` for fire-and-forget scripts.
+
 ## Tools
 
 | Tool | Purpose |

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config";
 import { startHttpServer } from "../src/http";
 import { callRemoteTool, listRemoteTools, parseClientArgs } from "../src/cli/client";
+import { createDblinkClient } from "../src/client";
 
 const baseConfig: Config = {
   http: true,
@@ -45,6 +46,27 @@ describe("dblink client", () => {
       });
       const qJson = q.json as { rows: { v: number }[] };
       expect(qJson.rows[0]?.v).toBe(1);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("reuses one session through createDblinkClient", async () => {
+    const handle = await startHttpServer(baseConfig);
+    try {
+      const url = `http://127.0.0.1:${handle.port}/mcp`;
+      const client = await createDblinkClient({ url, token: "client-token" });
+      try {
+        expect(await client.listTools()).toHaveLength(13);
+        const open = (await client.call("open_connection", { dsn: "sqlite::memory:" })) as any;
+        const id = open.json.connection_id;
+        const q1 = (await client.call("db_query", { connection_id: id, sql: "select 1 as v" })) as any;
+        const q2 = (await client.call("db_query", { connection_id: id, sql: "select 2 as v" })) as any;
+        expect(q1.json.rows[0].v).toBe(1);
+        expect(q2.json.rows[0].v).toBe(2);
+      } finally {
+        await client.close();
+      }
     } finally {
       await handle.close();
     }

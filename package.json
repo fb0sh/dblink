@@ -8,6 +8,10 @@
     "dblink": "dist/index.js"
   },
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client.js"
+  },
   "files": [
     "dist"
   ],

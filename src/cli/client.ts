@@ -1,39 +1,17 @@
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { callOnce, createDblinkClient, type RemoteOptions, type ToolCallResult } from "../client.js";
+import { parseFlags, stringFlag } from "./args.js";
 
-export interface RemoteOptions {
-  url: string;
-  token?: string;
-}
+export type { RemoteOptions, ToolCallResult } from "../client.js";
 
-export interface ToolCallResult {
-  json: unknown;
-  isError: boolean;
-}
-
-function createTransport(opts: RemoteOptions): StreamableHTTPClientTransport {
-  const headers: Record<string, string> = {};
-  if (opts.token) headers.authorization = `Bearer ${opts.token}`;
-  return new StreamableHTTPClientTransport(new URL(opts.url), { requestInit: { headers } });
-}
-
-async function withClient<T>(opts: RemoteOptions, fn: (client: Client) => Promise<T>): Promise<T> {
-  const client = new Client({ name: "dblink-client", version: "1.0.0" });
-  await client.connect(createTransport(opts));
+export async function listRemoteTools(opts: RemoteOptions): Promise<string[]> {
+  const client = await createDblinkClient(opts);
   try {
-    return await fn(client);
+    return await client.listTools();
   } finally {
     await client.close();
   }
-}
-
-export async function listRemoteTools(opts: RemoteOptions): Promise<string[]> {
-  return withClient(opts, async (client) => {
-    const res = await client.listTools();
-    return res.tools.map((t) => t.name);
-  });
 }
 
 export async function callRemoteTool(
@@ -41,11 +19,7 @@ export async function callRemoteTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-  return withClient(opts, async (client) => {
-    const res: any = await client.callTool({ name, arguments: args });
-    const text = res?.content?.[0]?.text;
-    return { json: text ? JSON.parse(text) : undefined, isError: res?.isError === true };
-  });
+  return callOnce(opts, name, args);
 }
 
 export interface ClientArgs {
@@ -60,37 +34,17 @@ export interface ClientArgs {
 const DEFAULT_URL = "http://127.0.0.1:7331/mcp";
 
 export function parseClientArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): ClientArgs {
-  const flags = new Map<string, string | true>();
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
-    if (!arg.startsWith("--")) continue;
-    const body = arg.slice(2);
-    if (body.includes("=")) {
-      const idx = body.indexOf("=");
-      flags.set(body.slice(0, idx), body.slice(idx + 1));
-    } else {
-      const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--")) {
-        flags.set(body, next);
-        i++;
-      } else {
-        flags.set(body, true);
-      }
-    }
-  }
-
-  const tool = typeof flags.get("tool") === "string" ? (flags.get("tool") as string) : undefined;
+  const flags = parseFlags(argv);
+  const tool = stringFlag(flags, "tool");
   let args: Record<string, unknown> | undefined;
-  const rawArgs = flags.get("args");
-  if (typeof rawArgs === "string") {
+  const rawArgs = stringFlag(flags, "args");
+  if (rawArgs !== undefined) {
     args = JSON.parse(rawArgs) as Record<string, unknown>;
   }
 
   return {
-    url: typeof flags.get("url") === "string" ? (flags.get("url") as string) : DEFAULT_URL,
-    token:
-      (typeof flags.get("token") === "string" ? (flags.get("token") as string) : undefined) ??
-      env.DBLINK_HTTP_TOKEN,
+    url: stringFlag(flags, "url") ?? DEFAULT_URL,
+    token: stringFlag(flags, "token") ?? env.DBLINK_HTTP_TOKEN,
     list: flags.get("list") === true,
     tool,
     args,
@@ -135,60 +89,72 @@ export async function runClient(argv: string[]): Promise<void> {
     return;
   }
 
-  const tools = await listRemoteTools(opts);
+  const client = await createDblinkClient(opts);
+  const tools = await client.listTools();
   console.log(`connected: ${opts.url}`);
   console.log(`tools: ${tools.join(", ")}`);
   console.log("type 'help' for commands, 'quit' to exit");
 
-  const rl = createInterface({ input: stdin, output: stdout });
+  const interactive = Boolean(stdin.isTTY);
+  const rl = createInterface({ input: stdin, output: stdout, terminal: interactive });
+  const iterator = rl[Symbol.asyncIterator]();
+
+  const nextLine = async (prompt?: string): Promise<string | undefined> => {
+    if (interactive) stdout.write(prompt ?? "dblink> ");
+    const { value, done } = await iterator.next();
+    return done ? undefined : value;
+  };
+
+  const handle = async (raw: string): Promise<boolean> => {
+    const trimmed = raw.trim();
+    if (!trimmed) return true;
+    if (["quit", "exit", "q"].includes(trimmed)) return false;
+    if (trimmed === "help" || trimmed === "?") {
+      console.log(USAGE);
+      return true;
+    }
+    if (trimmed === "tools") {
+      console.log(tools.join("\n"));
+      return true;
+    }
+    if (trimmed.startsWith("call ")) {
+      const rest = trimmed.slice("call ".length).trim();
+      const spaceIdx = rest.indexOf(" ");
+      const toolName = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
+      let jsonText = spaceIdx === -1 ? "" : rest.slice(spaceIdx + 1).trim();
+      if (!jsonText) {
+        jsonText = (await nextLine("args (JSON, blank = {}): "))?.trim() ?? "";
+      }
+      let args: Record<string, unknown> = {};
+      if (jsonText) {
+        try {
+          args = JSON.parse(jsonText) as Record<string, unknown>;
+        } catch (e) {
+          console.error(`invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
+          return true;
+        }
+      }
+      try {
+        const result = await client.call(toolName, args);
+        console.log(result.isError ? "error:" : "ok:");
+        console.log(JSON.stringify(result.json, null, 2));
+      } catch (e) {
+        console.error(`call failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return true;
+    }
+    console.error(`unknown command: ${trimmed} (type 'help')`);
+    return true;
+  };
+
   try {
     for (;;) {
-      let line: string;
-      try {
-        line = await rl.question("dblink> ");
-      } catch {
-        break; // EOF
-      }
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      if (["quit", "exit", "q"].includes(trimmed)) break;
-      if (trimmed === "help" || trimmed === "?") {
-        console.log(USAGE);
-        continue;
-      }
-      if (trimmed === "tools") {
-        console.log(tools.join("\n"));
-        continue;
-      }
-      if (trimmed.startsWith("call ")) {
-        const rest = trimmed.slice("call ".length).trim();
-        const spaceIdx = rest.indexOf(" ");
-        const toolName = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
-        let jsonText = spaceIdx === -1 ? "" : rest.slice(spaceIdx + 1).trim();
-        if (!jsonText) {
-          jsonText = (await rl.question("args (JSON, blank = {}): ")).trim();
-        }
-        let args: Record<string, unknown> = {};
-        if (jsonText) {
-          try {
-            args = JSON.parse(jsonText) as Record<string, unknown>;
-          } catch (e) {
-            console.error(`invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
-            continue;
-          }
-        }
-        try {
-          const result = await callRemoteTool(opts, toolName, args);
-          console.log(result.isError ? "error:" : "ok:");
-          console.log(JSON.stringify(result.json, null, 2));
-        } catch (e) {
-          console.error(`call failed: ${e instanceof Error ? e.message : String(e)}`);
-        }
-        continue;
-      }
-      console.error(`unknown command: ${trimmed} (type 'help')`);
+      const line = await nextLine();
+      if (line === undefined) break;
+      if (!(await handle(line))) break;
     }
   } finally {
     rl.close();
+    await client.close();
   }
 }

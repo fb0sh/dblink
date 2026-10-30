@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { parseFlags, stringFlag } from "./cli/args.js";
 import { runClient } from "./cli/client.js";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { startHttpServer } from "./http.js";
@@ -26,38 +27,16 @@ Environment:
   DBLINK_IDLE_MS      idle pool eviction ms (default 900000)
 `;
 
-function parseFlags(argv: string[]): Map<string, string | true> {
-  const flags = new Map<string, string | true>();
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
-    if (!arg.startsWith("--")) continue;
-    const body = arg.slice(2);
-    if (body.includes("=")) {
-      const idx = body.indexOf("=");
-      flags.set(body.slice(0, idx), body.slice(idx + 1));
-    } else {
-      const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--")) {
-        flags.set(body, next);
-        i++;
-      } else {
-        flags.set(body, true);
-      }
-    }
-  }
-  return flags;
-}
-
 async function serve(argv: string[]): Promise<void> {
   const flags = parseFlags(argv);
   const base = loadConfig([], process.env);
-  const host = typeof flags.get("host") === "string" ? (flags.get("host") as string) : base.host;
-  const rawPort = typeof flags.get("port") === "string" ? (flags.get("port") as string) : String(base.port);
+  const host = stringFlag(flags, "host") ?? base.host;
+  const rawPort = stringFlag(flags, "port") ?? String(base.port);
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new ConfigError(`Invalid --port: ${rawPort}`);
   }
-  const token = typeof flags.get("token") === "string" ? (flags.get("token") as string) : base.token;
+  const token = stringFlag(flags, "token") ?? base.token;
   if (!token) {
     throw new ConfigError("serve requires a token: pass --token or set DBLINK_HTTP_TOKEN");
   }

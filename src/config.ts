@@ -1,3 +1,5 @@
+import { parseFlags, stringFlag } from "./cli/args.js";
+
 export interface Config {
   http: boolean;
   port: number;
@@ -13,33 +15,22 @@ export class ConfigError extends Error {}
 const DEFAULT_PORT = 7331;
 const DEFAULT_IDLE_MS = 15 * 60 * 1000;
 
+
 export function loadConfig(argv: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Config {
+  const flags = parseFlags(argv);
+  const allowed = new Set(["http", "help", "h"]);
+  for (const key of flags.keys()) {
+    if (!allowed.has(key)) throw new ConfigError(`Unknown option: --${key}`);
+  }
+
   let http = false;
   let port = env.DBLINK_PORT ? Number(env.DBLINK_PORT) : DEFAULT_PORT;
-
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
-    if (arg === "--help" || arg === "-h") {
-      continue;
-    }
-    if (arg === "--http") {
-      http = true;
-      const next = argv[i + 1];
-      if (next && /^\d+$/.test(next)) {
-        port = Number(next);
-        i++;
-      } else if (next === undefined || next.startsWith("-")) {
-        // keep default / env port
-      } else {
-        throw new ConfigError(`Invalid --http port: ${next}`);
-      }
-    } else if (arg.startsWith("--http=")) {
-      http = true;
-      const value = arg.slice("--http=".length);
+  if (flags.has("http")) {
+    http = true;
+    const value = stringFlag(flags, "http");
+    if (value !== undefined) {
       if (!/^\d+$/.test(value)) throw new ConfigError(`Invalid --http port: ${value}`);
       port = Number(value);
-    } else if (arg.startsWith("--")) {
-      throw new ConfigError(`Unknown option: ${arg}`);
     }
   }
 
