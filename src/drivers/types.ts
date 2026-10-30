@@ -1,3 +1,5 @@
+import { DblinkError } from "../errors.js";
+
 export type EngineKind = "postgres" | "mysql" | "redis" | "sqlite" | "mongodb";
 
 export interface ColumnMeta {
@@ -59,28 +61,60 @@ export interface MongoCollectionDescription {
   inferred_fields: string[];
 }
 
-export interface Driver {
+/** Every engine has a connection lifecycle and nothing more. */
+export interface CoreDriver {
   readonly kind: EngineKind;
   connect(): Promise<void>;
   serverVersion(): Promise<string | undefined>;
+  ping(): Promise<boolean>;
+  close(): Promise<void>;
+}
+
+/** Capability: SQL engines. */
+export interface SqlOps {
   query(sql: string, params?: unknown[], opts?: QueryOptions): Promise<QueryResult>;
   execute(sql: string, params?: unknown[]): Promise<ExecuteResult>;
   listTables(schema?: string): Promise<string[]>;
   describeTable(table: string, schema?: string): Promise<TableDescription>;
-  ping(): Promise<boolean>;
-  close(): Promise<void>;
+}
 
-  /** Redis-only: run a raw command. Other drivers throw UNSUPPORTED. */
-  command?(command: string, args: string[]): Promise<unknown>;
+/** Capability: Redis. */
+export interface RedisOps {
+  command(command: string, args: string[]): Promise<unknown>;
+}
 
-  /** MongoDB-only operations. Other drivers leave these undefined. */
-  find?(collection: string, opts: MongoFindOptions): Promise<Record<string, unknown>[]>;
-  aggregate?(
-    collection: string,
-    pipeline: unknown[],
-    opts: MongoAggregateOptions,
-  ): Promise<Record<string, unknown>[]>;
-  mongoWrite?(op: MongoWriteOperation): Promise<Record<string, unknown>>;
-  listCollections?(database?: string): Promise<string[]>;
-  describeCollection?(collection: string, database?: string): Promise<MongoCollectionDescription>;
+/** Capability: MongoDB. */
+export interface MongoOps {
+  find(collection: string, opts: MongoFindOptions): Promise<Record<string, unknown>[]>;
+  aggregate(collection: string, pipeline: unknown[], opts: MongoAggregateOptions): Promise<Record<string, unknown>[]>;
+  mongoWrite(op: MongoWriteOperation): Promise<Record<string, unknown>>;
+  listCollections(database?: string): Promise<string[]>;
+  describeCollection(collection: string, database?: string): Promise<MongoCollectionDescription>;
+}
+
+/**
+ * A driver implements the core lifecycle plus only the capabilities its engine
+ * has. Callers narrow through the guards below instead of checking `kind`.
+ */
+export type Driver = CoreDriver & Partial<SqlOps> & Partial<RedisOps> & Partial<MongoOps>;
+
+export function sqlOps(driver: Driver): Driver & SqlOps {
+  if (!driver.query || !driver.execute || !driver.listTables || !driver.describeTable) {
+    throw new DblinkError("UNSUPPORTED", "This engine does not support SQL operations", "Use the tool for this engine.");
+  }
+  return driver as Driver & SqlOps;
+}
+
+export function redisOps(driver: Driver): Driver & RedisOps {
+  if (!driver.command) {
+    throw new DblinkError("UNSUPPORTED", "This engine does not support raw commands", "Use redis_command on a redis connection.");
+  }
+  return driver as Driver & RedisOps;
+}
+
+export function mongoOps(driver: Driver): Driver & MongoOps {
+  if (!driver.find || !driver.aggregate || !driver.mongoWrite || !driver.listCollections || !driver.describeCollection) {
+    throw new DblinkError("UNSUPPORTED", "This engine does not support MongoDB operations", "Use the mongo_* tools.");
+  }
+  return driver as Driver & MongoOps;
 }

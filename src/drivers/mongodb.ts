@@ -4,13 +4,10 @@ import { DblinkError } from "../errors.js";
 import type {
   Driver,
   EngineKind,
-  ExecuteResult,
   MongoAggregateOptions,
   MongoCollectionDescription,
   MongoFindOptions,
   MongoWriteOperation,
-  QueryResult,
-  TableDescription,
 } from "./types.js";
 
 function defaultDatabaseFromDsn(dsn: string): string {
@@ -66,22 +63,6 @@ export class MongoDriver implements Driver {
   async serverVersion(): Promise<string | undefined> {
     const info = (await this.db().admin().command({ buildInfo: 1 })) as { version?: string };
     return info.version ? `mongodb ${info.version}` : "mongodb";
-  }
-
-  async query(): Promise<QueryResult> {
-    throw new DblinkError("UNSUPPORTED", "MongoDB does not support SQL queries", "Use mongo_* tools.");
-  }
-
-  async execute(): Promise<ExecuteResult> {
-    throw new DblinkError("UNSUPPORTED", "MongoDB does not support SQL execution", "Use mongo_write.");
-  }
-
-  async listTables(): Promise<string[]> {
-    throw new DblinkError("UNSUPPORTED", "MongoDB has collections, not tables", "Use mongo_list_collections.");
-  }
-
-  async describeTable(): Promise<TableDescription> {
-    throw new DblinkError("UNSUPPORTED", "MongoDB has no table schema", "Use mongo_describe_collection.");
   }
 
   async find(collection: string, opts: MongoFindOptions): Promise<Record<string, unknown>[]> {

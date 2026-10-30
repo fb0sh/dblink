@@ -1,11 +1,9 @@
 #!/usr/bin/env node
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { parseFlags, stringFlag } from "./cli/args.js";
 import { runClient } from "./cli/client.js";
 import { ConfigError, loadConfig, type Config } from "./config.js";
-import { startHttpServer } from "./http.js";
 import { redactSecrets } from "./redact.js";
-import { createServer } from "./server.js";
+import { serveHttp, serveStdio } from "./server.js";
 
 const USAGE = `dblink — MCP server for multi-database access
 
@@ -27,7 +25,20 @@ Environment:
   DBLINK_IDLE_MS      idle pool eviction ms (default 900000)
 `;
 
-async function serve(argv: string[]): Promise<void> {
+async function startHttp(config: Config): Promise<void> {
+  const handle = await serveHttp(config);
+  console.error(
+    `dblink: HTTP MCP server listening on http://${config.host}:${handle.port}` +
+      (config.host === "0.0.0.0" ? " (WARNING: bound to 0.0.0.0, ensure the token is secret)" : ""),
+  );
+  const shutdown = () => {
+    void handle.close().finally(() => process.exit(0));
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+function serveConfig(argv: string[]): Config {
   const flags = parseFlags(argv);
   const base = loadConfig([], process.env);
   const host = stringFlag(flags, "host") ?? base.host;
@@ -40,49 +51,16 @@ async function serve(argv: string[]): Promise<void> {
   if (!token) {
     throw new ConfigError("serve requires a token: pass --token or set DBLINK_HTTP_TOKEN");
   }
-  await serveWith({ ...base, http: true, host, port, token });
-}
-
-async function serveWith(config: Config): Promise<void> {
-  const handle = await startHttpServer(config);
-  console.error(
-    `dblink: HTTP MCP server listening on http://${config.host}:${handle.port}` +
-      (config.host === "0.0.0.0" ? " (WARNING: bound to 0.0.0.0, ensure the token is secret)" : ""),
-  );
-  const shutdown = () => {
-    void handle.close().finally(() => process.exit(0));
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-}
-
-async function stdio(): Promise<void> {
-  const { server, registry } = createServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  const shutdown = () => {
-    void registry.closeAll().finally(() => process.exit(0));
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  return { ...base, http: true, host, port, token };
 }
 
 async function legacy(argv: string[]): Promise<void> {
-  let config: Config;
-  try {
-    config = loadConfig(argv);
-  } catch (e) {
-    if (e instanceof ConfigError) {
-      console.error(`dblink: ${e.message}`);
-      process.exit(1);
-    }
-    throw e;
-  }
+  const config = loadConfig(argv);
   if (config.http) {
-    await serveWith(config);
+    await startHttp(config);
     return;
   }
-  await stdio();
+  await serveStdio();
 }
 
 async function main(): Promise<void> {
@@ -94,18 +72,17 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "serve") {
-    await serve(argv.slice(1));
+    await startHttp(serveConfig(argv.slice(1)));
     return;
   }
   if (cmd === "stdio") {
-    await stdio();
+    await serveStdio();
     return;
   }
   if (cmd === "--help" || cmd === "-h" || cmd === "help") {
     console.log(USAGE);
     return;
   }
-  // Legacy: `dblink` (stdio) or `dblink --http 7331`.
   await legacy(argv);
 }
 

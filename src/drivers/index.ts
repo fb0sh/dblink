@@ -6,17 +6,64 @@ import { RedisDriver } from "./redis.js";
 import { SqliteDriver, sqlitePathFromDsn } from "./sqlite.js";
 import type { Driver, EngineKind } from "./types.js";
 
+export type Capability = "sql" | "redis" | "mongodb";
+
+export interface EngineAdapter {
+  readonly kind: EngineKind;
+  readonly capabilities: readonly Capability[];
+  match(dsn: string): boolean;
+  create(dsn: string, opts: { readOnly: boolean; poolSize: number }): Driver;
+}
+
+const ADAPTERS: readonly EngineAdapter[] = [
+  {
+    kind: "postgres",
+    capabilities: ["sql"],
+    match: (dsn) => /^postgres(ql)?:\/\//i.test(dsn),
+    create: (dsn, o) => new PostgresDriver(dsn, o.readOnly, o.poolSize),
+  },
+  {
+    kind: "mysql",
+    capabilities: ["sql"],
+    match: (dsn) => /^mysql:\/\//i.test(dsn),
+    create: (dsn, o) => new MysqlDriver(dsn, o.readOnly, o.poolSize),
+  },
+  {
+    kind: "redis",
+    capabilities: ["redis"],
+    match: (dsn) => /^rediss?:\/\//i.test(dsn),
+    create: (dsn) => new RedisDriver(dsn),
+  },
+  {
+    kind: "mongodb",
+    capabilities: ["mongodb"],
+    match: (dsn) => /^mongodb(\+srv)?:\/\//i.test(dsn),
+    create: (dsn, o) => new MongoDriver(dsn, o.poolSize),
+  },
+  {
+    kind: "sqlite",
+    capabilities: ["sql"],
+    match: (dsn) => /^sqlite:/i.test(dsn),
+    create: (dsn, o) => new SqliteDriver(sqlitePathFromDsn(dsn), o.readOnly),
+  },
+];
+
+function adapterForKind(kind: EngineKind): EngineAdapter {
+  const adapter = ADAPTERS.find((a) => a.kind === kind);
+  if (!adapter) throw new DblinkError("UNSUPPORTED", `Unsupported engine kind: ${kind}`);
+  return adapter;
+}
+
 export function detectKind(dsn: string): EngineKind {
-  if (/^postgres(ql)?:\/\//i.test(dsn)) return "postgres";
-  if (/^mysql:\/\//i.test(dsn)) return "mysql";
-  if (/^rediss?:\/\//i.test(dsn)) return "redis";
-  if (/^mongodb(\+srv)?:\/\//i.test(dsn)) return "mongodb";
-  if (/^sqlite:/i.test(dsn)) return "sqlite";
-  throw new DblinkError(
-    "UNSUPPORTED",
-    `Unsupported DSN scheme: ${dsn.split(":")[0] ?? dsn}`,
-    "Supported: postgres://, mysql://, redis://, mongodb://, sqlite:",
-  );
+  const adapter = ADAPTERS.find((a) => a.match(dsn));
+  if (!adapter) {
+    throw new DblinkError(
+      "UNSUPPORTED",
+      `Unsupported DSN scheme: ${dsn.split(":")[0] ?? dsn}`,
+      "Supported: postgres://, mysql://, redis://, mongodb://, sqlite:",
+    );
+  }
+  return adapter.kind;
 }
 
 export interface CreateDriverOptions {
@@ -25,20 +72,11 @@ export interface CreateDriverOptions {
 }
 
 export function createDriver(kind: EngineKind, dsn: string, opts: CreateDriverOptions): Driver {
-  switch (kind) {
-    case "sqlite":
-      return new SqliteDriver(sqlitePathFromDsn(dsn), opts.readOnly);
-    case "postgres":
-      return new PostgresDriver(dsn, opts.readOnly, opts.poolSize);
-    case "mysql":
-      return new MysqlDriver(dsn, opts.readOnly, opts.poolSize);
-    case "redis":
-      return new RedisDriver(dsn);
-    case "mongodb":
-      return new MongoDriver(dsn, opts.poolSize);
-    default:
-      throw new DblinkError("UNSUPPORTED", `Unsupported engine kind: ${kind}`);
-  }
+  return adapterForKind(kind).create(dsn, opts);
+}
+
+export function capabilitiesOf(kind: EngineKind): readonly Capability[] {
+  return adapterForKind(kind).capabilities;
 }
 
 export type { Driver, EngineKind } from "./types.js";

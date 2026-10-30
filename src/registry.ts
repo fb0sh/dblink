@@ -1,25 +1,16 @@
 import { randomBytes } from "node:crypto";
-import { DblinkError } from "./errors.js";
 import { createDriver, detectKind } from "./drivers/index.js";
 import { sqlitePathFromDsn } from "./drivers/sqlite.js";
-import type {
-  Driver,
-  EngineKind,
-  MongoAggregateOptions,
-  MongoCollectionDescription,
-  MongoFindOptions,
-  MongoWriteOperation,
-  TableDescription,
-} from "./drivers/types.js";
-import { assertAggregatePipeline } from "./mongo-guard.js";
-import { effectiveRowLimit, shapeRows } from "./result.js";
+import type { Driver, EngineKind } from "./drivers/types.js";
+import { DblinkError } from "./errors.js";
 
-const STATEMENT_TIMEOUT_MS = 30000;
+const DEFAULT_STATEMENT_TIMEOUT_MS = 30000;
 
 export interface RegistryOptions {
   poolSize?: number;
   idleMs?: number;
   maxPools?: number;
+  statementTimeoutMs?: number;
   driverFactory?: (kind: EngineKind, dsn: string, opts: { readOnly: boolean; poolSize: number }) => Driver;
   now?: () => number;
 }
@@ -50,31 +41,6 @@ export interface PublicConnection {
   alive: boolean;
 }
 
-export interface QueryShaped {
-  columns: string[];
-  rows: Record<string, unknown>[];
-  truncated: boolean;
-  reason?: "rows" | "bytes";
-  row_limit: number;
-}
-
-export interface MongoShaped {
-  documents: Record<string, unknown>[];
-  truncated: boolean;
-  reason?: "rows" | "bytes";
-  row_limit: number;
-}
-
-function shapeMongoDocs(docs: Record<string, unknown>[], requestedLimit?: number): MongoShaped {
-  const shaped = shapeRows(docs, { requestedLimit });
-  return {
-    documents: shaped.rows,
-    truncated: shaped.truncated,
-    ...(shaped.reason ? { reason: shaped.reason } : {}),
-    row_limit: shaped.rowLimit,
-  };
-}
-
 interface Entry {
   id: string;
   fingerprint: string;
@@ -102,6 +68,68 @@ async function safeVersion(driver: Driver): Promise<string | undefined> {
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new DblinkError("TIMEOUT", `Statement timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/**
+ * A resolved connection handle. Owns the per-connection policy every operation
+ * shares: touch-on-use, statement timeout, and one reconnect retry.
+ */
+export class Connection {
+  constructor(
+    private readonly entry: Entry,
+    private readonly clock: () => number,
+    private readonly timeoutMs: number,
+  ) {}
+
+  get id(): string {
+    return this.entry.id;
+  }
+
+  get kind(): EngineKind {
+    return this.entry.kind;
+  }
+
+  get readOnly(): boolean {
+    return this.entry.readOnly;
+  }
+
+  get driver(): Driver {
+    return this.entry.driver;
+  }
+
+  touch(): void {
+    this.entry.lastUsedAt = this.clock();
+  }
+
+  async run<T>(fn: (driver: Driver) => Promise<T>, timeoutMs: number = this.timeoutMs): Promise<T> {
+    this.touch();
+    try {
+      return await withTimeout(fn(this.entry.driver), timeoutMs);
+    } catch (e) {
+      if (!isConnectionError(e)) throw e;
+      try {
+        await this.entry.driver.close();
+      } catch {
+        /* ignore */
+      }
+      await this.entry.driver.connect();
+      this.touch();
+      return await withTimeout(fn(this.entry.driver), timeoutMs);
+    }
+  }
+}
+
 export class ConnectionRegistry {
   private readonly byFingerprint = new Map<string, Entry>();
   private readonly byId = new Map<string, Entry>();
@@ -109,6 +137,7 @@ export class ConnectionRegistry {
   private readonly poolSize: number;
   private readonly idleMs: number;
   private readonly maxPools: number;
+  private readonly statementTimeoutMs: number;
   private readonly factory: NonNullable<RegistryOptions["driverFactory"]>;
   private readonly clock: () => number;
 
@@ -116,6 +145,7 @@ export class ConnectionRegistry {
     this.poolSize = opts.poolSize ?? 5;
     this.idleMs = opts.idleMs ?? 15 * 60 * 1000;
     this.maxPools = opts.maxPools ?? 20;
+    this.statementTimeoutMs = opts.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS;
     this.factory = opts.driverFactory ?? ((kind, dsn, o) => createDriver(kind, dsn, o));
     this.clock = opts.now ?? Date.now;
   }
@@ -208,132 +238,16 @@ export class ConnectionRegistry {
     return entry;
   }
 
+  resolve(id: string): Connection {
+    return new Connection(this.require(id), this.clock, this.statementTimeoutMs);
+  }
+
   kindOf(id: string): EngineKind {
     return this.require(id).kind;
   }
 
   isReadOnly(id: string): boolean {
     return this.require(id).readOnly;
-  }
-
-  async query(
-    id: string,
-    sql: string,
-    params?: unknown[],
-    opts: { requestedLimit?: number; timeoutMs?: number } = {},
-  ): Promise<QueryShaped> {
-    const entry = this.require(id);
-    const limit = effectiveRowLimit(opts.requestedLimit);
-    const raw = await this.withTimeout(
-      this.withReconnect(entry, (d) => d.query(sql, params, { maxRows: limit + 1, timeoutMs: opts.timeoutMs ?? STATEMENT_TIMEOUT_MS })),
-      opts.timeoutMs ?? STATEMENT_TIMEOUT_MS,
-    );
-    const shaped = shapeRows(raw.rows, { requestedLimit: opts.requestedLimit });
-    return {
-      columns: raw.columns,
-      rows: shaped.rows,
-      truncated: shaped.truncated,
-      reason: shaped.reason,
-      row_limit: shaped.rowLimit,
-    };
-  }
-
-  async execute(id: string, sql: string, params?: unknown[]): Promise<{ affected_rows: number }> {
-    const entry = this.require(id);
-    if (entry.readOnly) {
-      throw new DblinkError(
-        "READ_ONLY_VIOLATION",
-        "This connection is read-only; db_execute is not allowed",
-        "Re-open the connection with read_only=false to allow writes.",
-      );
-    }
-    const res = await this.withReconnect(entry, (d) => d.execute(sql, params));
-    return { affected_rows: res.affectedRows };
-  }
-
-  async listTables(id: string, schema?: string): Promise<string[]> {
-    const entry = this.require(id);
-    return this.withReconnect(entry, (d) => d.listTables(schema));
-  }
-
-  async describeTable(id: string, table: string, schema?: string): Promise<TableDescription> {
-    const entry = this.require(id);
-    return this.withReconnect(entry, (d) => d.describeTable(table, schema));
-  }
-
-  async mongoFind(id: string, collection: string, opts: MongoFindOptions = {}): Promise<MongoShaped> {
-    const entry = this.require(id);
-    if (entry.kind !== "mongodb" || !entry.driver.find) {
-      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_find");
-    }
-    const limit = effectiveRowLimit(opts.limit);
-    const docs = await this.withTimeout(
-      this.withReconnect(entry, (d) => d.find!(collection, { ...opts, limit: limit + 1 })),
-      STATEMENT_TIMEOUT_MS,
-    );
-    return shapeMongoDocs(docs, opts.limit);
-  }
-
-  async mongoAggregate(
-    id: string,
-    collection: string,
-    pipeline: unknown[],
-    opts: MongoAggregateOptions = {},
-  ): Promise<MongoShaped> {
-    const entry = this.require(id);
-    if (entry.kind !== "mongodb" || !entry.driver.aggregate) {
-      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_aggregate");
-    }
-    assertAggregatePipeline(pipeline, entry.readOnly);
-    const limit = effectiveRowLimit(opts.limit);
-    const docs = await this.withTimeout(
-      this.withReconnect(entry, (d) => d.aggregate!(collection, pipeline, { ...opts, limit: limit + 1 })),
-      STATEMENT_TIMEOUT_MS,
-    );
-    return shapeMongoDocs(docs, opts.limit);
-  }
-
-  async mongoWrite(id: string, op: MongoWriteOperation): Promise<Record<string, unknown>> {
-    const entry = this.require(id);
-    if (entry.kind !== "mongodb" || !entry.driver.mongoWrite) {
-      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_write");
-    }
-    if (entry.readOnly) {
-      throw new DblinkError(
-        "READ_ONLY_VIOLATION",
-        "This connection is read-only; mongo_write is not allowed",
-        "Re-open the connection with read_only=false to allow writes.",
-      );
-    }
-    return this.withTimeout(this.withReconnect(entry, (d) => d.mongoWrite!(op)), STATEMENT_TIMEOUT_MS);
-  }
-
-  async mongoListCollections(id: string, database?: string): Promise<string[]> {
-    const entry = this.require(id);
-    if (entry.kind !== "mongodb" || !entry.driver.listCollections) {
-      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_list_collections");
-    }
-    return this.withTimeout(this.withReconnect(entry, (d) => d.listCollections!(database)), STATEMENT_TIMEOUT_MS);
-  }
-
-  async mongoDescribeCollection(
-    id: string,
-    collection: string,
-    database?: string,
-  ): Promise<MongoCollectionDescription> {
-    const entry = this.require(id);
-    if (entry.kind !== "mongodb" || !entry.driver.describeCollection) {
-      throw new DblinkError("UNSUPPORTED", "This connection does not support mongo_describe_collection");
-    }
-    return this.withTimeout(this.withReconnect(entry, (d) => d.describeCollection!(collection, database)), STATEMENT_TIMEOUT_MS);
-  }
-
-  async command(id: string, command: string, args: string[]): Promise<unknown> {
-    const entry = this.require(id);
-    if (!entry.driver.command) {
-      throw new DblinkError("UNSUPPORTED", "This connection does not support raw commands");
-    }
-    return this.withTimeout(this.withReconnect(entry, (d) => d.command!(command, args)), STATEMENT_TIMEOUT_MS);
   }
 
   async list(): Promise<PublicConnection[]> {
@@ -384,38 +298,6 @@ export class ConnectionRegistry {
         this.closedIds.add(entry.id);
         await entry.driver.close().catch(() => undefined);
       }
-    }
-  }
-
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new DblinkError("TIMEOUT", `Statement timed out after ${timeoutMs}ms`)),
-        timeoutMs,
-      );
-    });
-    try {
-      return await Promise.race([promise, timeout]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-
-  private async withReconnect<T>(entry: Entry, fn: (driver: Driver) => Promise<T>): Promise<T> {
-    entry.lastUsedAt = this.clock();
-    try {
-      return await fn(entry.driver);
-    } catch (e) {
-      if (!isConnectionError(e)) throw e;
-      try {
-        await entry.driver.close();
-      } catch {
-        /* ignore */
-      }
-      await entry.driver.connect();
-      entry.lastUsedAt = this.clock();
-      return await fn(entry.driver);
     }
   }
 }

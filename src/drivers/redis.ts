@@ -1,12 +1,6 @@
 import { createClient, type RedisClientType } from "redis";
 import { DblinkError } from "../errors.js";
-import type {
-  Driver,
-  EngineKind,
-  ExecuteResult,
-  QueryResult,
-  TableDescription,
-} from "./types.js";
+import type { Driver, EngineKind } from "./types.js";
 
 export class RedisDriver implements Driver {
   readonly kind: EngineKind = "redis";
@@ -37,22 +31,6 @@ export class RedisDriver implements Driver {
 
   async command(command: string, args: string[]): Promise<unknown> {
     return this.requireClient().sendCommand([command.toUpperCase(), ...args]);
-  }
-
-  async query(): Promise<QueryResult> {
-    throw new DblinkError("UNSUPPORTED", "Redis does not support SQL queries", "Use redis_command instead.");
-  }
-
-  async execute(): Promise<ExecuteResult> {
-    throw new DblinkError("UNSUPPORTED", "Redis does not support SQL execution", "Use redis_command instead.");
-  }
-
-  async listTables(): Promise<string[]> {
-    throw new DblinkError("UNSUPPORTED", "Redis does not expose tables");
-  }
-
-  async describeTable(): Promise<TableDescription> {
-    throw new DblinkError("UNSUPPORTED", "Redis does not expose table schemas");
   }
 
   async ping(): Promise<boolean> {
