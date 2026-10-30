@@ -35,7 +35,7 @@ Agent（LLM 驱动的编码/运维助手）需要读取与操作多种数据库�
 19. 作为 agent，我想在语句超时时收到 `TIMEOUT`，这样我能判断是慢查询而非语法错误。
 20. 作为 agent，我想在 SQL 出错时收到 `SQL_ERROR` 且带可读 `message`，这样我能改写语句。
 21. 作为 agent，我想所有失败都以 `{ok:false, error:{code,message,hint}}` 返回，这样我能按 `code` 分支处理。
-22. 作为本地用户，我想用 stdio 直接启动 `npx dblink` 且无需鉴权，这样本地开发零配置。
+22. 作为本地用户，我想用 stdio 直接启动 `npx @fb0sh/dblink` 且无需鉴权，这样本地开发零配置。
 23. 作为远程用户，我想用 `--http 7331` 开启 HTTP 且必须携带 Bearer Token，这样我能远程访问而不裸奔。
 24. 作为运维者，我想在启用 HTTP 但未配置 token 时服务拒绝启动，这样不会误开无鉴权端口。
 25. 作为运维者，我想默认只 bind `127.0.0.1`，要对外必须显式 `DBLINK_BIND=0.0.0.0`，这样默认不暴露内网。
@@ -105,7 +105,7 @@ Agent（LLM 驱动的编码/运维助手）需要读取与操作多种数据库�
 
 ## Further Notes
 
-- 包名 `dblink`（npm 已确认可用），bin `dblink`，`npx dblink` 启动；Node ≥ 22；TypeScript → `tsc` → `dist/`。
+- 包名 `@fb0sh/dblink`（scoped，`dblink` 已被占用），bin `dblink`，`npx @fb0sh/dblink` 启动；Node ≥ 22；TypeScript → `tsc` → `dist/`。
 - 默认参数：池 5 / 空闲 15min / 上限 20 池 / 100 行 / 256KB / 30s / 端口 7331。
 - 对齐 `rules/KEEPSECURED.md`：不持久化明文凭据，服务端日志打码。
 - 本轮仅产出 spec，未开始实现（遵循 KEEPTRACK：实现需另行授权）。

@@ -1,5 +1,5 @@
 {
-  "name": "dblink",
+  "name": "@fb0sh/dblink",
   "version": "0.0.1",
   "description": "MCP server for multi-database access: PostgreSQL, MySQL, Redis, SQLite",
   "type": "module",

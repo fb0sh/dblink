@@ -10,7 +10,7 @@
 ## Decision
 
 - TypeScript 源码 → `tsc` 编译到 `dist/`，不使用打包器。
-- npm 包名 **`dblink`**（已确认可用），bin 名 `dblink`，通过 `npx dblink` 启动。
+- npm 包名 **`@fb0sh/dblink`**（scoped，归属 fb0sh 账号，避免与已占用的 `dblink@1.4.8` 冲突），bin 名 `dblink`，通过 `npx @fb0sh/dblink` 启动。
 - Node **>= 22**（本机 26；22+ 提供内置 `node:sqlite`）。
 - MCP SDK：`@modelcontextprotocol/sdk`；参数校验用 `zod`。
 - 传输：默认 stdio；`--http <port>`（默认 7331）开启 MCP Streamable HTTP。
