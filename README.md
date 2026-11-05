@@ -46,6 +46,14 @@ Build the image (`dblink:local`; CI builds `linux/amd64`):
 docker build -t dblink:local .
 ```
 
+Published image (public, `linux/amd64`): [`ghcr.io/fb0sh/dblink`](https://github.com/fb0sh/dblink/pkgs/container/dblink).
+
+```bash
+docker pull ghcr.io/fb0sh/dblink:2.1.0
+```
+
+Releases publish on `vX.Y.Z` tags via the `release-image` workflow (`X.Y.Z`, `X`, `latest`). GHCR starts new packages private — after the first publish, set the package visibility to **Public** once in the package settings.
+
 stdio (default, no auth — for local use):
 
 ```bash

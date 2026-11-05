@@ -16,12 +16,14 @@ npm / `npx` 分发要求目标机安装 Node.js，且难以做到进程隔离，
 - **镜像形态**：多阶段 `node:22-alpine` 构建，构建阶段完成 TypeScript 编译，运行阶段仅装生产依赖并拷贝产物；以非 root 的 `node` 用户运行，并预建归其所有的可写 `/data` 供 SQLite 文件落盘。
 - **不集成 docker-compose**：不修改仓库现有 `docker-compose.yml`（其用于 pg/mysql/redis/mongo 集成测试），需要在其它项目中自行集成该镜像。
 - **CI**：新增 `docker` job 构建镜像并跑冒烟（`--version`、`serve` 下 `/healthz` 200、无 token 的 `/mcp` 401），防止 Dockerfile 静默腐坏。
+- **镜像发布**：`v*` tag 触发 `release-image` workflow，推送到公开的 GHCR `ghcr.io/fb0sh/dblink`（`:X.Y.Z`、`:X`、`:latest`，仅 amd64）。GHCR 新包默认私有，首次发布后需在包设置中手动改为 Public（GitHub 无 API 可自动化该步骤）。
 
 ## Consequences
 
 - 目标机无需安装 Node.js，镜像可作为固定制品分发与复用。
 - 容器默认绑定 `0.0.0.0` 意味着端口映射后即对外可达，凭据保护完全依赖运行时注入的 Bearer token。
 - stdio 容器不会被误判为 unhealthy，`serve` 容器则接受真实 HTTP 存活检查。
-- 镜像仅 `amd64`；其它架构（如 arm64）、推送镜像仓库、镜像签名、SBOM、多架构构建均不在本次范围。
+- 镜像仅 `amd64`；arm64 等多架构、镜像签名、SBOM 不在本次范围。
+- 发布由 tag 触发；`latest` 会随每次 release 前移，下游应优先按版本或 digest 固定。
 - 不提供 compose 集成，使用方需在其项目中自行编排 dblink 服务。
 - 模式感知是一种简化：`serve` 进程存活但监听已死，或 `serve --host` 绑定到非 loopback 地址而探针使用 `127.0.0.1` 时，会报告为健康；深度就绪检查不在本次范围。

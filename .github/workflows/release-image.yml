@@ -1,0 +1,63 @@
+name: release-image
+
+# Publish the container image to GHCR on vX.Y.Z tags.
+# NOTE: GHCR creates new packages as private. After the first successful run,
+# set the package visibility to Public once (Packages -> dblink -> Package
+# settings). GitHub has no API to automate that visibility change.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive image tags
+        id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a vX.Y.Z release tag"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "major=${version%%.*}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Build image
+        run: |
+          image="$REGISTRY/${IMAGE_NAME,,}"
+          docker build \
+            --platform=linux/amd64 \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.version=${{ steps.meta.outputs.version }}" \
+            --label "org.opencontainers.image.licenses=MIT" \
+            -t "$image:${{ steps.meta.outputs.version }}" \
+            .
+
+      - name: Push image tags
+        run: |
+          image="$REGISTRY/${IMAGE_NAME,,}"
+          version="${{ steps.meta.outputs.version }}"
+          major="${{ steps.meta.outputs.major }}"
+          docker tag "$image:$version" "$image:$major"
+          docker tag "$image:$version" "$image:latest"
+          docker push "$image:$version"
+          docker push "$image:$major"
+          docker push "$image:latest"
