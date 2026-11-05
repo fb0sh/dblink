@@ -16,6 +16,8 @@ npx @fb0sh/dblink
 DBLINK_HTTP_TOKEN=change-me npx @fb0sh/dblink --http 7331
 ```
 
+Prefer a container? See [Docker (container MCP)](#docker-container-mcp) for the published `ghcr.io/fb0sh/dblink` image and MCP client config.
+
 ## CLI
 
 ```bash
@@ -38,50 +40,65 @@ MCP client config (stdio) example:
 }
 ```
 
-## Docker
+## Docker (container MCP)
 
-Build the image (`dblink:local`; CI builds `linux/amd64`):
+The image runs the same MCP server. Default is **stdio** (the MCP client spawns the container); `serve` switches it to **MCP Streamable HTTP**.
 
-```bash
-docker build -t dblink:local .
-```
-
-Published image (public, `linux/amd64`): [`ghcr.io/fb0sh/dblink`](https://github.com/fb0sh/dblink/pkgs/container/dblink).
+Published image (public, `linux/amd64`): `ghcr.io/fb0sh/dblink:2.1.0` (also `:2` and `:latest`).
 
 ```bash
 docker pull ghcr.io/fb0sh/dblink:2.1.0
 ```
 
-Releases publish on `vX.Y.Z` tags via the `release-image` workflow (`X.Y.Z`, `X`, `latest`). GHCR starts new packages private — after the first publish, set the package visibility to **Public** once in the package settings.
-
-stdio (default, no auth — for local use):
+Build locally instead (equivalent, tagged `dblink:local`):
 
 ```bash
-docker run -i --rm dblink:local
+docker build -t dblink:local .
 ```
 
-MCP client config (stdio) example:
+### MCP client config — stdio (container)
 
 ```json
 {
   "mcpServers": {
-    "dblink": { "command": "docker", "args": ["run", "-i", "--rm", "dblink:local"] }
+    "dblink": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "ghcr.io/fb0sh/dblink:2.1.0"]
+    }
   }
 }
 ```
 
-Streamable HTTP (requires a bearer token; refuses to start without one):
+Use `dblink:local` in place of the image if you built it locally. The client must attach stdin (`-i`) and must not allocate a TTY (`-t`).
+
+### MCP client config — Streamable HTTP
 
 ```bash
-docker run --rm -p 7331:7331 -e DBLINK_HTTP_TOKEN=change-me dblink:local serve
+docker run -d --name dblink \
+  -p 7331:7331 \
+  -e DBLINK_HTTP_TOKEN=change-me \
+  ghcr.io/fb0sh/dblink:2.1.0 serve
 ```
+
+```json
+{
+  "mcpServers": {
+    "dblink": {
+      "url": "http://127.0.0.1:7331/mcp",
+      "headers": { "Authorization": "Bearer change-me" }
+    }
+  }
+}
+```
+
+`serve` requires `DBLINK_HTTP_TOKEN` and refuses to start without it. Releases publish on `vX.Y.Z` tags via the `release-image` workflow (`X.Y.Z`, `X`, `latest`). GHCR starts new packages private — after the first publish, set the package visibility to **Public** once in the package settings.
 
 `GET/HEAD /healthz` is an unauthenticated liveness probe (returns `{"ok":true}`); every other path, including `/mcp`, still requires the Bearer token.
 
 SQLite persistence — mount a volume at `/data` and use a file DSN:
 
 ```bash
-docker run -i --rm -v dblink-data:/data dblink:local
+docker run -i --rm -v dblink-data:/data ghcr.io/fb0sh/dblink:2.1.0
 # inside the session: open_connection with dsn "sqlite:/data/app.db"
 ```
 
