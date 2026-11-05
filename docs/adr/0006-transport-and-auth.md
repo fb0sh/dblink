@@ -11,6 +11,7 @@
 
 - **stdio**：不鉴权。
 - **HTTP**：必须 Bearer Token，来自环境变量 `DBLINK_HTTP_TOKEN`；请求带 `Authorization: Bearer <token>`，不匹配返回 401；**HTTP 已启用但未配置 token 时拒绝启动（fail-closed）**。
+- **例外（存活探针）**：免鉴权的 `GET/HEAD /healthz` 是 liveness 探针的 carve-out，仅返回 `{"ok":true}`，不承载任何 MCP 能力或数据（见 ADR-0011）；其余路径（含 `/mcp`）仍强制 Bearer token。
 - 默认 bind `127.0.0.1:7331`；`DBLINK_BIND=0.0.0.0` 需显式设置，且启动日志打印警告。
 - 采用**单一全局注册表**：持有同一 token 的多个 HTTP 客户端共享 `connection_id` 空间。
 
