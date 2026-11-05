@@ -131,7 +131,7 @@ dblink 目前只通过 npm / `npx` 分发，部署到没有 Node.js 的机器、
 ## Out of Scope
 
 - 修改现有 `docker-compose.yml` 或为其新增 dblink 服务（使用方在其它项目集成）。
-- 推送镜像到镜像仓库、镜像签名、SBOM、多架构（amd64 + arm64）构建。
+- 镜像签名、SBOM、多架构（amd64 + arm64）构建。
 - TLS 终止、反向代理、限流等网关职责。
 - 为 stdio 增加鉴权、多租户隔离、按客户端隔离的连接注册表。
 - 把 `/healthz` 扩展成 readiness / 依赖数据库连通性的深度检查。
@@ -146,3 +146,4 @@ dblink 目前只通过 npm / `npx` 分发，部署到没有 Node.js 的机器、
 - 健康检查用 `DBLINK_PORT` 作为探测端口的来源；使用 `--port` 覆盖端口时需同步设置 `DBLINK_PORT`（README 说明）。
 - 对齐仓库 KEEPLEAN / KEEPSECURED / KEEPTIDY 规则：最小改动、镜像不含明文凭据、临时构建产物留在项目内。
 - 本 spec 仅描述设计与验收；实际实现需按 KEEPTRACK 另行获得授权后开始。
+- 后续变更（2026-11-05）：新增 `v*` tag 触发的 GHCR 发布（公开 `ghcr.io/fb0sh/dblink`，见 ADR-0011）；原 Out of Scope 中的「推送镜像到镜像仓库」已放开。
