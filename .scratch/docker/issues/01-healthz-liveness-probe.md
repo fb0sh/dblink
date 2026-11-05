@@ -4,11 +4,14 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `GET /healthz` 无 `Authorization` 返回 `200`，body 为 `{"ok":true}`，不泄露版本/配置/连接数
-- [ ] `HEAD /healthz` 返回 `200` 且无正文
-- [ ] `POST /healthz`（以及其它非 GET/HEAD 方法）无 token 时返回 `401`
-- [ ] 其它路径（如 `/mcp`）无 token 仍返回 `401`
-- [ ] 带正确 token 的既有 MCP 工具调用不受影响（回归）
-- [ ] S1 单测与 S2 e2e 覆盖上述行为并通过
+- [x] `GET /healthz` 无 `Authorization` 返回 `200`，body 为 `{"ok":true}`，不泄露版本/配置/连接数
+- [x] `HEAD /healthz` 返回 `200` 且无正文
+- [x] `POST /healthz`（以及其它非 GET/HEAD 方法）无 token 时返回 `401`
+- [x] 其它路径（如 `/mcp`）无 token 仍返回 `401`
+- [x] 带正确 token 的既有 MCP 工具调用不受影响（回归）
+- [x] S1 单测与 S2 e2e 覆盖上述行为并通过
+
+## Comments
+- 2026-11-05: resolved on `feature/docker-packaging` (feature commit d676e61, merged 17e5348). `isLivenessRequest` checks exact `/healthz` path before auth; S1 + S2 tests added; `npm test` 65 passed / 18 skipped. Verified live: GET/HEAD `/healthz` 200 without token, POST `/healthz` & `/mcp` 401.

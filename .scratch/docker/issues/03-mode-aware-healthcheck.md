@@ -4,10 +4,13 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 镜像内置 `HEALTHCHECK`，无需使用方额外配置
-- [ ] `stdio` 模式（无 HTTP 监听）容器健康状态为 `healthy`
-- [ ] `serve` 模式下通过实际请求 `GET /healthz` 判断，非 200 或异常时转为 `unhealthy`
-- [ ] 探针端口跟随 `DBLINK_PORT`（默认 7331）
-- [ ] `docker inspect` 可观察到健康状态变化
+- [x] 镜像内置 `HEALTHCHECK`，无需使用方额外配置
+- [x] `stdio` 模式（无 HTTP 监听）容器健康状态为 `healthy`
+- [x] `serve` 模式下通过实际请求 `GET /healthz` 判断，非 200 或异常时转为 `unhealthy`
+- [x] 探针端口跟随 `DBLINK_PORT`（默认 7331）
+- [x] `docker inspect` 可观察到健康状态变化
+
+## Comments
+- 2026-11-05: resolved on `feature/docker-packaging` (feature commit 42f45b2, merged 33e799c). Probe extracted to `docker/healthcheck.mjs` during review fixes; bind-aware host (`DBLINK_BIND` unless `0.0.0.0`, else `127.0.0.1`), ECONNREFUSED→0, 200→0, else 1. Verified stdio container healthy and serve healthy/unhealthy transition; stdio branch also asserted in CI.
