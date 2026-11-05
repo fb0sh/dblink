@@ -26,6 +26,24 @@ describe("09 — HTTP transport auth (S3)", () => {
     await expect(serveHttp({ ...baseConfig, token: undefined })).rejects.toThrow(/DBLINK_HTTP_TOKEN/);
   });
 
+  it("serves /healthz without a token while /mcp still requires one", async () => {
+    const handle = await serveHttp(baseConfig);
+    try {
+      const health = await fetch(`http://127.0.0.1:${handle.port}/healthz`);
+      expect(health.status).toBe(200);
+      expect(await health.json()).toEqual({ ok: true });
+
+      const mcp = await fetch(`http://127.0.0.1:${handle.port}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+        body: initializeBody,
+      });
+      expect(mcp.status).toBe(401);
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("rejects missing and wrong bearer tokens, accepts the right one", async () => {
     const handle = await serveHttp(baseConfig);
     try {

@@ -68,3 +68,84 @@ jobs:
           DBLINK_TEST_MYSQL_DSN: mysql://dblink:dblink@127.0.0.1:3306/dblink
           DBLINK_TEST_REDIS_DSN: redis://127.0.0.1:6379
           DBLINK_TEST_MONGO_DSN: mongodb://127.0.0.1:27017/dblink
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --platform=linux/amd64 -t dblink:local .
+      - name: CLI smoke
+        run: docker run --rm dblink:local --version
+      - name: Stdio smoke
+        run: |
+          request='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          response=$(printf '%s\n' "$request" | timeout 30 docker run -i --rm dblink:local)
+          echo "$response"
+          echo "$response" | grep -q '"jsonrpc"'
+      - name: Start Streamable HTTP container
+        run: |
+          docker run -d --name dblink-ci \
+            -e DBLINK_HTTP_TOKEN=ci-token \
+            -p 7331:7331 \
+            dblink:local serve
+      - name: Wait for /healthz
+        run: |
+          for attempt in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7331/healthz || true)
+            if [ "$code" = "200" ]; then
+              echo "/healthz returned 200 after ${attempt} attempt(s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::/healthz did not return 200 within 60s"
+          docker logs dblink-ci
+          exit 1
+      - name: Assert /mcp rejects unauthenticated requests
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST http://127.0.0.1:7331/mcp \
+            -H 'content-type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}')
+          if [ "$code" != "401" ]; then
+            echo "::error::expected /mcp without token to return 401, got $code"
+            docker logs dblink-ci
+            exit 1
+          fi
+          echo "/mcp without token returned 401"
+      - name: Assert container is healthy
+        run: |
+          for attempt in $(seq 1 45); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' dblink-ci)
+            if [ "$status" = "healthy" ]; then
+              echo "container is healthy after ${attempt} attempt(s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::container did not become healthy within 90s (last status: $status)"
+          docker inspect --format '{{json .State.Health}}' dblink-ci
+          docker logs dblink-ci
+          exit 1
+      - name: Verify stdio container health
+        run: |
+          docker run -d -i --name dblink-ci-stdio dblink:local
+          for attempt in $(seq 1 45); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' dblink-ci-stdio)
+            if [ "$status" = "healthy" ]; then
+              echo "stdio container is healthy after ${attempt} attempt(s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::stdio container did not become healthy within 90s (last status: $status)"
+          docker inspect --format '{{json .State.Health}}' dblink-ci-stdio
+          docker logs dblink-ci-stdio
+          exit 1
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f dblink-ci || true
+          docker rm -f dblink-ci-stdio || true
+          docker rmi dblink:local || true

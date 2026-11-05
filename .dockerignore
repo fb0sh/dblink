@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+.github
+.scratch
+test
+coverage
+docs
+rules
+*.tgz
+tmp
+README.md
+AGENTS.md
+GLOSSARY.md
+docker-compose.yml
+LICENSE

@@ -87,6 +87,46 @@ describe("server-http helpers", () => {
     expect(res.status).toBe(404);
   });
 
+  it("serves GET /healthz without a token", async () => {
+    const core: any = { buildServer: () => Promise.reject(new Error("unused")) };
+    const handler = createRequestHandler({ core, sessions: new SessionStore(), token: "t" });
+    const req: any = { headers: {}, method: "GET", url: "/healthz" };
+    const res = recorder();
+    await handler(req, res);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe('{"ok":true}');
+
+    const withQuery: any = { headers: {}, method: "GET", url: "/healthz?probe=1" };
+    const queryRes = recorder();
+    await handler(withQuery, queryRes);
+    expect(queryRes.status).toBe(200);
+  });
+
+  it("keeps the bearer check for non-probe methods and paths", async () => {
+    const core: any = { buildServer: () => Promise.reject(new Error("unused")) };
+    const handler = createRequestHandler({ core, sessions: new SessionStore(), token: "t" });
+
+    const post: any = streamRequest("{}", {}, "POST");
+    post.url = "/healthz";
+    let res = recorder();
+    await handler(post, res);
+    expect(res.status).toBe(401);
+
+    res = recorder();
+    await handler({ headers: {}, method: "GET", url: "/mcp" }, res);
+    expect(res.status).toBe(401);
+  });
+
+  it("serves HEAD /healthz without a token or a body", async () => {
+    const core: any = { buildServer: () => Promise.reject(new Error("unused")) };
+    const handler = createRequestHandler({ core, sessions: new SessionStore(), token: "t" });
+    const req: any = { headers: {}, method: "HEAD", url: "/healthz" };
+    const res = recorder();
+    await handler(req, res);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("");
+  });
+
   it("returns 413 for an oversized body through the handler", async () => {
     const core: any = { buildServer: () => Promise.reject(new Error("unused")) };
     const handler = createRequestHandler({ core, sessions: new SessionStore(), token: "t" });

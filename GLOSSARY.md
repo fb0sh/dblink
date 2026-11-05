@@ -15,6 +15,7 @@
 | **tool** | 通过 MCP 暴露给 agent 的操作（见 ADR-0005 的 8 个工具）。 |
 | **truncation** | 结果超过行数/字节上限时的截断，返回 `truncated: true`，无游标。 |
 | **bearer token** | HTTP 传输的鉴权凭据，来自 `DBLINK_HTTP_TOKEN`。 |
+| **transport** | MCP 传输通道：stdio（本地、无鉴权）与 Streamable HTTP（远程、Bearer token）。 |
 | **best-effort guard** | 代码层的 SQL 词法/单语句拦截，仅减少手滑，可被绕过。 |
 | **document** | MongoDB 的基本数据单元（BSON 文档）；对应 SQL 的"行"。 |
 | **collection** | MongoDB 中一组 document 的容器；对应 SQL 的"表"，但无固定 schema。 |

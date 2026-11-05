@@ -38,6 +38,55 @@ MCP client config (stdio) example:
 }
 ```
 
+## Docker
+
+Build the image (`dblink:local`; CI builds `linux/amd64`):
+
+```bash
+docker build -t dblink:local .
+```
+
+Published image (public, `linux/amd64`): [`ghcr.io/fb0sh/dblink`](https://github.com/fb0sh/dblink/pkgs/container/dblink).
+
+```bash
+docker pull ghcr.io/fb0sh/dblink:2.1.0
+```
+
+Releases publish on `vX.Y.Z` tags via the `release-image` workflow (`X.Y.Z`, `X`, `latest`). GHCR starts new packages private — after the first publish, set the package visibility to **Public** once in the package settings.
+
+stdio (default, no auth — for local use):
+
+```bash
+docker run -i --rm dblink:local
+```
+
+MCP client config (stdio) example:
+
+```json
+{
+  "mcpServers": {
+    "dblink": { "command": "docker", "args": ["run", "-i", "--rm", "dblink:local"] }
+  }
+}
+```
+
+Streamable HTTP (requires a bearer token; refuses to start without one):
+
+```bash
+docker run --rm -p 7331:7331 -e DBLINK_HTTP_TOKEN=change-me dblink:local serve
+```
+
+`GET/HEAD /healthz` is an unauthenticated liveness probe (returns `{"ok":true}`); every other path, including `/mcp`, still requires the Bearer token.
+
+SQLite persistence — mount a volume at `/data` and use a file DSN:
+
+```bash
+docker run -i --rm -v dblink-data:/data dblink:local
+# inside the session: open_connection with dsn "sqlite:/data/app.db"
+```
+
+The image sets `DBLINK_BIND=0.0.0.0` (unlike the bare-metal default `127.0.0.1`). If you override the port with `--port`, set `DBLINK_PORT` to match so the container `HEALTHCHECK` probes the right port. The `HEALTHCHECK` probes the bind address (`DBLINK_BIND`, or `127.0.0.1` when bound to `0.0.0.0`) and cannot detect a `serve` whose process is alive but listener has died.
+
 ## Library usage (integration)
 
 Hold one MCP session instead of reconnecting per call:
