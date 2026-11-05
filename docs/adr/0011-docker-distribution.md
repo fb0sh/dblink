@@ -9,7 +9,7 @@ npm / `npx` 分发要求目标机安装 Node.js，且难以做到进程隔离，
 
 ## Decision
 
-- **单镜像双传输**：默认以 stdio 运行（`docker run -i --rm dblink:local`）；`docker run ... dblink:local serve` 切换为 MCP Streamable HTTP。镜像标签 `dblink:local`，仅构建 `linux/amd64`。
+- **单镜像双传输**：默认以 stdio 运行（`docker run -i --rm dblink:local`）；`docker run ... dblink:local serve` 切换为 MCP Streamable HTTP。镜像标签 `dblink:local`；CI 以 `--platform=linux/amd64` 构建，不做多架构。
 - **容器绑定**：镜像内置 `DBLINK_BIND=0.0.0.0`、`DBLINK_PORT=7331`，端口映射后即可访问；这与裸机默认 `127.0.0.1` 不同。对外暴露仍保持 Bearer token **强制**（`DBLINK_HTTP_TOKEN`），缺失即拒绝启动（fail-closed），且 token 由运行时注入、**不**烘焙进镜像。
 - **模式感知的 HEALTHCHECK**：端口无监听（stdio 模式）视为健康；有监听则请求 `GET /healthz` 判 200。探针端口取自 `DBLINK_PORT`，用 `--port` 覆盖端口时需同步设置 `DBLINK_PORT`，以保证探测正确。
 - **最小存活探针**：新增免鉴权的 `GET /healthz`（仅返回 `{"ok":true}`，不泄露版本或配置）；除 `/healthz` 外所有路径仍走 Bearer token。这与 ADR-0006 不冲突——ADR-0006 约束的是 MCP 端点，`/healthz` 是新增的最小存活探针，不承载任何 MCP 能力或数据。
@@ -24,3 +24,4 @@ npm / `npx` 分发要求目标机安装 Node.js，且难以做到进程隔离，
 - stdio 容器不会被误判为 unhealthy，`serve` 容器则接受真实 HTTP 存活检查。
 - 镜像仅 `amd64`；其它架构（如 arm64）、推送镜像仓库、镜像签名、SBOM、多架构构建均不在本次范围。
 - 不提供 compose 集成，使用方需在其项目中自行编排 dblink 服务。
+- 模式感知是一种简化：`serve` 进程存活但监听已死，或 `serve --host` 绑定到非 loopback 地址而探针使用 `127.0.0.1` 时，会报告为健康；深度就绪检查不在本次范围。

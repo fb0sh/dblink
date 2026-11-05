@@ -40,7 +40,7 @@ MCP client config (stdio) example:
 
 ## Docker
 
-Build the image (`dblink:local`, linux/amd64):
+Build the image (`dblink:local`; CI builds `linux/amd64`):
 
 ```bash
 docker build -t dblink:local .
@@ -68,7 +68,7 @@ Streamable HTTP (requires a bearer token; refuses to start without one):
 docker run --rm -p 7331:7331 -e DBLINK_HTTP_TOKEN=change-me dblink:local serve
 ```
 
-`GET /healthz` is an unauthenticated liveness probe (returns `{"ok":true}`); every other path, including `/mcp`, still requires the Bearer token.
+`GET/HEAD /healthz` is an unauthenticated liveness probe (returns `{"ok":true}`); every other path, including `/mcp`, still requires the Bearer token.
 
 SQLite persistence — mount a volume at `/data` and use a file DSN:
 
@@ -77,7 +77,7 @@ docker run -i --rm -v dblink-data:/data dblink:local
 # inside the session: open_connection with dsn "sqlite:/data/app.db"
 ```
 
-The image sets `DBLINK_BIND=0.0.0.0` (unlike the bare-metal default `127.0.0.1`). If you override the port with `--port`, set `DBLINK_PORT` to match so the container `HEALTHCHECK` probes the right port.
+The image sets `DBLINK_BIND=0.0.0.0` (unlike the bare-metal default `127.0.0.1`). If you override the port with `--port`, set `DBLINK_PORT` to match so the container `HEALTHCHECK` probes the right port. The `HEALTHCHECK` probes the bind address (`DBLINK_BIND`, or `127.0.0.1` when bound to `0.0.0.0`) and cannot detect a `serve` whose process is alive but listener has died.
 
 ## Library usage (integration)
 

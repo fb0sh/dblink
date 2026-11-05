@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t dblink:local .
+        run: docker build --platform=linux/amd64 -t dblink:local .
       - name: CLI smoke
         run: docker run --rm dblink:local --version
       - name: Stdio smoke
@@ -128,8 +128,24 @@ jobs:
           docker inspect --format '{{json .State.Health}}' dblink-ci
           docker logs dblink-ci
           exit 1
+      - name: Verify stdio container health
+        run: |
+          docker run -d -i --name dblink-ci-stdio dblink:local
+          for attempt in $(seq 1 45); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' dblink-ci-stdio)
+            if [ "$status" = "healthy" ]; then
+              echo "stdio container is healthy after ${attempt} attempt(s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::stdio container did not become healthy within 90s (last status: $status)"
+          docker inspect --format '{{json .State.Health}}' dblink-ci-stdio
+          docker logs dblink-ci-stdio
+          exit 1
       - name: Clean up
         if: always()
         run: |
           docker rm -f dblink-ci || true
+          docker rm -f dblink-ci-stdio || true
           docker rmi dblink:local || true

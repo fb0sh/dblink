@@ -9,3 +9,8 @@ docs
 rules
 *.tgz
 tmp
+README.md
+AGENTS.md
+GLOSSARY.md
+docker-compose.yml
+LICENSE
