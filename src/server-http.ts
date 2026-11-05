@@ -115,6 +115,13 @@ export function classifyRequest(input: {
   return input.hasSessionId ? "unknown-session" : "bad-request";
 }
 
+/** Unauthenticated liveness probe: exact `/healthz` path (query string allowed), GET/HEAD only. */
+function isLivenessRequest(req: http.IncomingMessage): boolean {
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  const path = (req.url ?? "").split("?")[0];
+  return path === "/healthz";
+}
+
 async function createSession(core: DblinkCore, sessions: SessionStore): Promise<Session> {
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
   const server = core.buildServer();
@@ -134,6 +141,12 @@ export function createRequestHandler(options: {
 }): (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void> {
   const { core, sessions, token } = options;
   return async (req, res) => {
+    if (isLivenessRequest(req)) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(req.method === "HEAD" ? undefined : JSON.stringify({ ok: true }));
+      return;
+    }
+
     if (!isAuthorized(req, token)) {
       res.writeHead(401, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "Unauthorized" }));
