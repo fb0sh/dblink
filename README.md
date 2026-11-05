@@ -38,6 +38,47 @@ MCP client config (stdio) example:
 }
 ```
 
+## Docker
+
+Build the image (`dblink:local`, linux/amd64):
+
+```bash
+docker build -t dblink:local .
+```
+
+stdio (default, no auth — for local use):
+
+```bash
+docker run -i --rm dblink:local
+```
+
+MCP client config (stdio) example:
+
+```json
+{
+  "mcpServers": {
+    "dblink": { "command": "docker", "args": ["run", "-i", "--rm", "dblink:local"] }
+  }
+}
+```
+
+Streamable HTTP (requires a bearer token; refuses to start without one):
+
+```bash
+docker run --rm -p 7331:7331 -e DBLINK_HTTP_TOKEN=change-me dblink:local serve
+```
+
+`GET /healthz` is an unauthenticated liveness probe (returns `{"ok":true}`); every other path, including `/mcp`, still requires the Bearer token.
+
+SQLite persistence — mount a volume at `/data` and use a file DSN:
+
+```bash
+docker run -i --rm -v dblink-data:/data dblink:local
+# inside the session: open_connection with dsn "sqlite:/data/app.db"
+```
+
+The image sets `DBLINK_BIND=0.0.0.0` (unlike the bare-metal default `127.0.0.1`). If you override the port with `--port`, set `DBLINK_PORT` to match so the container `HEALTHCHECK` probes the right port.
+
 ## Library usage (integration)
 
 Hold one MCP session instead of reconnecting per call:
